@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data files (QMT downloaded market data)
+data/
+
+# Environment variables
+.env
+.env.*
+
+# Logs
+*.log
+
+# pytest / coverage
+.pytest_cache/
+htmlcov/
+.coverage
