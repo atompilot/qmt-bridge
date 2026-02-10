@@ -1,0 +1,72 @@
+site_name: QMT Bridge 文档
+site_description: miniQMT 行情与交易 HTTP/WebSocket 桥接
+repo_url: https://github.com/qmt-bridge/qmt-bridge
+
+theme:
+  name: material
+  language: zh
+  palette:
+    - scheme: default
+      primary: indigo
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            show_root_heading: true
+            members_order: source
+            docstring_style: google
+            merge_init_into_class: true
+            show_signature_annotations: true
+
+nav:
+  - 首页: index.md
+  - 快速开始: getting-started.md
+  - 配置参考: configuration.md
+  - REST API 速查: rest-api.md
+  - WebSocket: websocket.md
+  - Python 客户端 API:
+      - 总览: api/index.md
+      - 行情数据: api/market.md
+      - Tick/L2: api/tick.md
+      - 板块管理: api/sector.md
+      - 交易日历: api/calendar.md
+      - 财务数据: api/financial.md
+      - 合约信息: api/instrument.md
+      - 期权: api/option.md
+      - ETF/可转债: api/etf.md
+      - 期货: api/futures.md
+      - 公式/指标: api/formula.md
+      - 港股通: api/hk.md
+      - 表格数据: api/tabular.md
+      - 工具方法: api/utility.md
+      - 数据下载: api/download.md
+      - 系统元数据: api/meta.md
+      - 交易: api/trading.md
+      - 融资融券: api/credit.md
+      - 资金划转: api/fund.md
+      - 约定式交易: api/smt.md
+      - 银证转账: api/bank.md
+      - WebSocket 客户端: api/websocket-client.md
+
+extra_css:
+  - css/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true

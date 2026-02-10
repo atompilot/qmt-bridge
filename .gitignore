@@ -46,3 +46,6 @@ data/
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Documentation build output
+site/

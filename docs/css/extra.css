@@ -1,0 +1,20 @@
+/* QMT Bridge 文档自定义样式 */
+
+/* 让 API 参考中的方法签名更紧凑 */
+.doc-object .doc-children {
+    margin-left: 0.5rem;
+}
+
+/* 表格响应式优化 */
+.md-typeset table:not([class]) {
+    font-size: 0.82rem;
+}
+
+.md-typeset table:not([class]) th {
+    white-space: nowrap;
+}
+
+/* 代码块内中文字体 */
+.md-typeset code {
+    font-family: "JetBrains Mono", "Fira Code", monospace;
+}
