@@ -26,6 +26,7 @@ ENV/
 .DS_Store
 Thumbs.db
 desktop.ini
+nul
 
 # Data files (QMT downloaded market data)
 data/
@@ -33,6 +34,10 @@ data/
 # Environment variables
 .env
 .env.*
+!.env.example
+
+# PID files
+*.pid
 
 # Logs
 *.log

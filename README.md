@@ -21,8 +21,8 @@ Mac / Linux (主力机)                    Windows (中转站)
 
 ## Features
 
-- **REST API** — 历史 K 线、批量查询、板块成分股、股票详情、最新 tick 快照
-- **WebSocket** — 实时行情推送，支持 tick 和分钟级别订阅
+- **REST API** — 历史 K 线、批量查询、板块成分股、股票详情、最新 tick 快照、财务数据、指数权重、期权/可转债/ETF 数据、期货主力合约等
+- **WebSocket** — 实时行情推送、整市场行情订阅、下载进度推送
 - **零业务逻辑** — 纯数据管道，不含任何交易策略代码
 - **不涉及自动交易** — 仅暴露行情数据接口，不包含下单功能
 
@@ -77,7 +77,7 @@ http://<Windows局域网IP>:8000/docs
 
 ## API Reference
 
-### REST Endpoints
+### Legacy Endpoints (backward compatible)
 
 | Method | Path | Description | Parameters |
 |--------|------|-------------|------------|
@@ -88,13 +88,111 @@ http://<Windows局域网IP>:8000/docs
 | GET | `/api/instrument_detail` | 获取股票基本信息 | `stock` |
 | POST | `/api/download` | 触发历史数据下载到 QMT 本地缓存 | `stock`, `period`, `start`, `end` |
 
+### Market — 行情数据 `/api/market/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| GET | `/api/market/snapshot` | 实时行情快照（大盘/个股通用） | `stocks` |
+| GET | `/api/market/indices` | 主要指数行情概览（一键大盘全景） | — |
+| GET | `/api/market/history_ex` | 增强版 K 线（支持除权、填充） | `stocks`, `period`, `start_time`, `end_time`, `count`, `dividend_type`, `fill_data` |
+| GET | `/api/market/local_data` | 仅读本地缓存（离线可用） | `stocks`, `period`, `start_time`, `end_time`, `count`, `dividend_type`, `fill_data` |
+| GET | `/api/market/divid_factors` | 除权因子 | `stock`, `start_time`, `end_time` |
+
+### Tick & L2 — 逐笔数据 `/api/tick/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| GET | `/api/tick/l2_quote` | L2 行情快照 | `stock`, `start_time`, `end_time`, `count` |
+| GET | `/api/tick/l2_order` | L2 逐笔委托 | `stock`, `start_time`, `end_time`, `count` |
+| GET | `/api/tick/l2_transaction` | L2 逐笔成交 | `stock`, `start_time`, `end_time`, `count` |
+
+### Sector — 板块数据 `/api/sector/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| GET | `/api/sector/list` | 获取所有板块列表 | — |
+| GET | `/api/sector/stocks` | 获取板块成分股列表 | `sector`, `real_timetag` |
+| GET | `/api/sector/info` | 板块元数据 | `sector` |
+
+### Calendar — 交易日历 `/api/calendar/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| GET | `/api/calendar/trading_dates` | 交易日列表 | `market`, `start_time`, `end_time`, `count` |
+| GET | `/api/calendar/holidays` | 节假日列表 | — |
+| GET | `/api/calendar/trading_calendar` | 含未来日期的完整日历 | `market`, `start_time`, `end_time` |
+| GET | `/api/calendar/trading_period` | 交易时段 | `stock` |
+
+### Financial — 财务数据 `/api/financial/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| GET | `/api/financial/data` | 财务报表数据 | `stocks`, `tables`, `start_time`, `end_time`, `report_type` |
+
+### Instrument — 合约信息 `/api/instrument/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| GET | `/api/instrument/batch_detail` | 批量合约详情 | `stocks`, `iscomplete` |
+| GET | `/api/instrument/type` | 判断代码类型 | `stock` |
+| GET | `/api/instrument/ipo_info` | IPO 信息 | `start_time`, `end_time` |
+| GET | `/api/instrument/index_weight` | 指数成分股权重 | `index_code` |
+| GET | `/api/instrument/st_history` | ST 历史 | `stock` |
+
+### Option — 期权数据 `/api/option/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| GET | `/api/option/detail` | 期权合约详情 | `option_code` |
+| GET | `/api/option/chain` | 标的对应的期权链 | `undl_code` |
+| GET | `/api/option/list` | 按到期日/类型筛选期权 | `undl_code`, `dedate`, `opttype`, `isavailable` |
+| GET | `/api/option/history_list` | 历史期权列表 | `undl_code`, `dedate` |
+
+### ETF & Convertible Bond — `/api/etf/*` & `/api/cb/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| GET | `/api/etf/list` | ETF 代码列表（轻量） | — |
+| GET | `/api/etf/info` | ETF 申赎清单 | — |
+| GET | `/api/cb/info` | 可转债信息 | `stock` |
+
+### Futures — 期货数据 `/api/futures/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| GET | `/api/futures/main_contract` | 期货主力合约 | `code_market`, `start_time`, `end_time` |
+| GET | `/api/futures/sec_main_contract` | 期货次主力合约 | `code_market`, `start_time`, `end_time` |
+
+### Meta — 系统元数据 `/api/meta/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| GET | `/api/meta/markets` | 可用市场列表 | — |
+| GET | `/api/meta/periods` | 可用 K 线周期列表 | — |
+| GET | `/api/meta/stock_list` | 按类别获取证券代码列表 | `category` |
+| GET | `/api/meta/last_trade_date` | 最近交易日 | `market` |
+
+### Download — 数据下载 `/api/download/*`
+
+| Method | Path | Description | Parameters |
+|--------|------|-------------|------------|
+| POST | `/api/download/batch` | 批量下载历史数据 | `stocks`, `period`, `start_time`, `end_time` |
+| POST | `/api/download/financial` | 下载财务数据 | `stocks`, `tables`, `start_time`, `end_time` |
+| POST | `/api/download/sector_data` | 下载板块数据 | — |
+| POST | `/api/download/index_weight` | 下载指数权重 | — |
+| POST | `/api/download/etf_info` | 下载 ETF 信息 | — |
+| POST | `/api/download/cb_data` | 下载可转债数据 | — |
+| POST | `/api/download/history_contracts` | 下载过期合约 | — |
+
 ### WebSocket
 
 | Path | Description |
 |------|-------------|
 | `ws://<host>:<port>/ws/realtime` | 实时行情推送 |
+| `ws://<host>:<port>/ws/whole_quote` | 整市场行情订阅推送 |
+| `ws://<host>:<port>/ws/download_progress` | 下载进度推送 |
 
-连接后发送 JSON 订阅请求：
+**`/ws/realtime`** — 连接后发送 JSON 订阅请求：
 
 ```json
 {
@@ -103,17 +201,80 @@ http://<Windows局域网IP>:8000/docs
 }
 ```
 
+**`/ws/whole_quote`** — 连接后发送市场/股票列表：
+
+```json
+{
+  "codes": ["SH", "SZ"]
+}
+```
+
+**`/ws/download_progress`** — 连接后发送下载任务参数：
+
+```json
+{
+  "stocks": ["000001.SZ"],
+  "period": "1d",
+  "start_time": "",
+  "end_time": ""
+}
+```
+
 ### Examples
 
 ```bash
-# 获取平安银行最近 60 根日线
+# 获取平安银行最近 60 根日线（legacy）
 curl "http://192.168.1.100:8000/api/history?stock=000001.SZ&period=1d&count=60"
 
-# 批量获取多只股票 5 分钟线
-curl "http://192.168.1.100:8000/api/batch_history?stocks=000001.SZ,600519.SH&period=5m&count=100"
+# 增强版 K 线，前复权
+curl "http://192.168.1.100:8000/api/market/history_ex?stocks=000001.SZ&period=1d&count=5&dividend_type=front"
 
-# 获取沪深 A 股成分股列表
+# 获取所有可用市场
+curl "http://192.168.1.100:8000/api/meta/markets"
+
+# 获取可用 K 线周期
+curl "http://192.168.1.100:8000/api/meta/periods"
+
+# 获取所有板块列表
+curl "http://192.168.1.100:8000/api/sector/list"
+
+# 获取沪深 A 股成分股列表（legacy）
 curl "http://192.168.1.100:8000/api/sector_stocks?sector=沪深A股"
+
+# 获取沪深 A 股成分股列表（新端点）
+curl "http://192.168.1.100:8000/api/sector/stocks?sector=沪深A股"
+
+# 大盘行情一览
+curl "http://192.168.1.100:8000/api/market/indices"
+
+# 个股/指数快照
+curl "http://192.168.1.100:8000/api/market/snapshot?stocks=000001.SH,000001.SZ"
+
+# ETF 代码列表
+curl "http://192.168.1.100:8000/api/etf/list"
+
+# 按类别获取证券列表
+curl "http://192.168.1.100:8000/api/meta/stock_list?category=沪深指数"
+
+# 最近交易日
+curl "http://192.168.1.100:8000/api/meta/last_trade_date?market=SH"
+
+# 获取交易日列表
+curl "http://192.168.1.100:8000/api/calendar/trading_dates?market=SH"
+
+# 获取节假日列表
+curl "http://192.168.1.100:8000/api/calendar/holidays"
+
+# 获取指数成分股权重
+curl "http://192.168.1.100:8000/api/instrument/index_weight?index_code=000300.SH"
+
+# 获取财务数据
+curl "http://192.168.1.100:8000/api/financial/data?stocks=000001.SZ&tables=Balance"
+
+# 批量下载历史数据
+curl -X POST "http://192.168.1.100:8000/api/download/batch" \
+  -H "Content-Type: application/json" \
+  -d '{"stocks": ["000001.SZ", "600519.SH"], "period": "1d"}'
 ```
 
 ## Python Client
@@ -129,8 +290,38 @@ client = QMTClient(host="192.168.1.100")
 df = client.get_history("000001.SZ", period="1d", count=60)
 print(df)
 
+# 增强版 K 线，前复权
+dfs = client.get_history_ex(["000001.SZ"], dividend_type="front", count=60)
+
+# 获取板块列表
+sectors = client.get_sector_list()
+
 # 获取板块成分股
 stocks = client.get_sector_stocks("沪深A股")
+
+# 大盘行情一览
+indices = client.get_major_indices()
+
+# 个股快照
+snapshot = client.get_market_snapshot(["000001.SZ", "600519.SH"])
+
+# ETF 代码列表
+etfs = client.get_etf_list()
+
+# 按类别获取证券列表
+all_indices = client.get_stock_list_by_category("沪深指数")
+
+# 最近交易日
+last_date = client.get_last_trade_date("SH")
+
+# 获取交易日列表
+dates = client.get_trading_dates("SH")
+
+# 获取财务数据
+fin = client.get_financial_data(["000001.SZ"], tables=["Balance"])
+
+# 获取可用市场
+markets = client.get_markets()
 
 # 实时行情订阅
 import asyncio
@@ -148,9 +339,24 @@ asyncio.run(client.subscribe_realtime(
 
 ```
 qmt-bridge/
-├── server.py          # FastAPI 服务主文件
-├── qmt_client.py      # Python 客户端类（供远程机器使用）
-├── requirements.txt   # Python 依赖
+├── server.py              # FastAPI app, .env 加载, 路由注册, uvicorn 入口
+├── helpers.py             # 数据转换工具函数
+├── models.py              # Pydantic 请求模型
+├── routers/
+│   ├── __init__.py
+│   ├── market.py          # 行情数据 /api/market/*
+│   ├── tick.py            # Tick & L2 /api/tick/*
+│   ├── sector.py          # 板块 /api/sector/*
+│   ├── calendar.py        # 交易日历 /api/calendar/*
+│   ├── financial.py       # 财务数据 /api/financial/*
+│   ├── instrument.py      # 合约信息 /api/instrument/*
+│   ├── option.py          # 期权 /api/option/*
+│   ├── etf.py             # ETF & 可转债 /api/etf/*, /api/cb/*
+│   ├── futures.py         # 期货 /api/futures/*
+│   ├── meta.py            # 系统元数据 /api/meta/*
+│   └── download.py        # 数据下载 /api/download/*
+├── qmt_client.py          # Python 客户端类（供远程机器使用）
+├── requirements.txt       # Python 依赖
 └── README.md
 ```
 
