@@ -1,0 +1,46 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    name: Build & Publish
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # OIDC for Trusted Publisher
+    environment:
+      name: pypi
+      url: https://pypi.org/project/qmt-bridge/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build sdist & wheel
+        run: python -m build
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+        continue-on-error: true  # 重复版本号不阻断
+
+      - name: Verify TestPyPI install
+        run: |
+          sleep 15  # 等待 TestPyPI 索引更新
+          pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ qmt-bridge
+          python -c "import qmt_bridge; print(f'TestPyPI OK: {qmt_bridge.__version__}')"
+        continue-on-error: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

@@ -58,8 +58,8 @@ dashboard = [
 qmt-server = "qmt_bridge.server.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/qmt-bridge/qmt-bridge"
-Repository = "https://github.com/qmt-bridge/qmt-bridge"
+Homepage = "https://github.com/atompilot/qmt-bridge"
+Repository = "https://github.com/atompilot/qmt-bridge"
 
 [tool.hatch.version]
 path = "src/qmt_bridge/_version.py"

@@ -108,6 +108,14 @@ check: fmt lint
 build:
     python -m build
 
+# 发布到 TestPyPI（首次验证用）
+publish-test: build
+    python -m twine upload --repository testpypi dist/*
+
+# 发布到 PyPI
+publish: build
+    python -m twine upload dist/*
+
 # 清理构建产物
 clean:
     rm -rf dist/ build/ site/ *.egg-info src/*.egg-info
