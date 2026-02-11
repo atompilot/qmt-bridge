@@ -69,6 +69,14 @@ class DownloadMixin:
             "tables": tables or [],
         })
 
+    def download_metatable_data(self) -> dict:
+        """下载合约元数据表（期货合约等品种信息）。
+
+        在查询期货合约列表或获取主力合约前必须先调用此方法，
+        底层调用 ``xtdata.download_metatable_data()``。
+        """
+        return self._post("/api/download/metatable", {})
+
     def download_holiday_data(self) -> dict:
         """Download holiday calendar data."""
         return self._post("/api/download/holiday", {})

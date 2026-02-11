@@ -90,6 +90,13 @@ def download_financial_data2(req: FinancialDownload2Request):
     return {"status": "ok", "stocks": req.stocks, "tables": req.tables}
 
 
+@router.post("/metatable")
+def download_metatable_data():
+    """Download instrument metatable data (required before accessing futures contracts)."""
+    xtdata.download_metatable_data()
+    return {"status": "ok"}
+
+
 @router.post("/holiday")
 def download_holiday_data():
     """Download holiday calendar data."""
