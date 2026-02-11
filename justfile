@@ -44,6 +44,11 @@ serve-port port="8000":
 serve-debug:
     qmt-server --log-level debug
 
+# 停止 API 服务（查找并终止占用 18888 端口的进程）
+serve-stop:
+    @echo "正在查找 qmt-server 进程..."
+    Get-NetTCPConnection -LocalPort 18888 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }; if ($?) { echo "✅ qmt-server 已停止" } else { echo "⚠️ 未找到运行中的 qmt-server" }
+
 # ─────────────────────────── 仪表盘 ─────────────────────────
 
 # 启动可视化仪表盘（http://localhost:8501）
