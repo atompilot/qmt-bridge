@@ -10,12 +10,19 @@ def _numpy_to_python(obj):
         return {k: _numpy_to_python(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_numpy_to_python(i) for i in obj]
+    if isinstance(obj, float):
+        if obj != obj or obj == float("inf") or obj == float("-inf"):
+            return None
+        return obj
     if isinstance(obj, np.ndarray):
-        return obj.tolist()
+        return _numpy_to_python(obj.tolist())
     if isinstance(obj, (np.integer,)):
         return int(obj)
     if isinstance(obj, (np.floating,)):
-        return float(obj)
+        val = float(obj)
+        if val != val or val == float("inf") or val == float("-inf"):
+            return None
+        return val
     if isinstance(obj, (np.bool_,)):
         return bool(obj)
     return obj

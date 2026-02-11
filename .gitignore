@@ -31,6 +31,9 @@ nul
 # Data files (QMT downloaded market data)
 data/
 
+# Dashboard local config (contains API key)
+.dashboard_config.json
+
 # Environment variables
 .env
 .env.*
