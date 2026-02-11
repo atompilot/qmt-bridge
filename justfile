@@ -74,10 +74,10 @@ docs-all:
     @echo "==> 构建 MkDocs 文档..."
     mkdocs build -d site/
     @echo "==> 构建 pdoc API 参考..."
-    pdoc --html --output-dir site/pdoc src/qmt_bridge/client/
+    pdoc -o site/pdoc src/qmt_bridge/client/
     @echo "==> 完成！"
     @echo "    MkDocs: site/index.html"
-    @echo "    pdoc:   site/pdoc/qmt_bridge/client/index.html"
+    @echo "    pdoc:   site/pdoc/index.html"
 
 # 清理文档构建产物
 docs-clean:

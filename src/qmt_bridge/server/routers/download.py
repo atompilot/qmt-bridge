@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 from xtquant import xtdata
 
+from ..helpers import _numpy_to_python
 from ..models import BatchDownloadRequest, FinancialDownload2Request, FinancialDownloadRequest
 
 router = APIRouter(prefix="/api/download", tags=["download"])
@@ -10,13 +11,19 @@ router = APIRouter(prefix="/api/download", tags=["download"])
 
 @router.post("/batch")
 def download_batch(req: BatchDownloadRequest):
-    xtdata.download_history_data2(
+    """Synchronous batch download — blocks until server-side download finishes."""
+    result = xtdata.download_history_data2(
         req.stocks,
         period=req.period,
         start_time=req.start_time,
         end_time=req.end_time,
     )
-    return {"status": "ok", "stocks": req.stocks, "period": req.period}
+    return {
+        "status": "ok",
+        "stocks": req.stocks,
+        "period": req.period,
+        "result": _numpy_to_python(result) if result else {},
+    }
 
 
 @router.post("/financial")
