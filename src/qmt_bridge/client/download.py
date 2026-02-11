@@ -54,9 +54,6 @@ class DownloadMixin:
         """Trigger option data download."""
         return self._post("/api/download/option_data", {})
 
-    def download_futures_data(self) -> dict:
-        """Trigger futures data download."""
-        return self._post("/api/download/futures_data", {})
 
     def download_financial_data2(
         self, stocks: list[str], tables: list[str] | None = None

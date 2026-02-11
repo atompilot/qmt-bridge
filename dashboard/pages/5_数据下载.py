@@ -133,14 +133,6 @@ with col3:
         except Exception as e:
             st.error(f"下载失败: {e}")
 
-    if st.button("下载期货数据", key="btn_dl_futures", use_container_width=True):
-        try:
-            with st.spinner("下载中..."):
-                result = client.download_futures_data()
-            st.success("期货数据下载完成")
-            st.json(result)
-        except Exception as e:
-            st.error(f"下载失败: {e}")
 
 st.markdown("---")
 

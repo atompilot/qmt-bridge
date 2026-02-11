@@ -79,12 +79,6 @@ def download_option_data():
     return {"status": "ok"}
 
 
-@router.post("/futures_data")
-def download_futures_data():
-    """Trigger futures data download."""
-    xtdata.download_futures_data()
-    return {"status": "ok"}
-
 
 @router.post("/financial2")
 def download_financial_data2(req: FinancialDownload2Request):

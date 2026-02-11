@@ -270,7 +270,6 @@ curl http://<Windows局域网IP>:8000/api/meta/health
 | POST | `/api/download/history_contracts` | 下载过期合约 |
 | POST | `/api/download/ipo_data` | 下载 IPO 数据 |
 | POST | `/api/download/option_data` | 下载期权数据 |
-| POST | `/api/download/futures_data` | 下载期货数据 |
 
 ### Trading — 交易 `/api/trading/*` (需要 API Key)
 

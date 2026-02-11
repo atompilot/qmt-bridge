@@ -21,7 +21,7 @@
 | 历史日线 | `client.get_history_ex(stocks, period="1d", ...)` | 同上 |
 | 实时快照（单次查询） | `client.get_market_snapshot(["518880.SH", "AU2506.SHFE"])` | REST 轮询备用方案 |
 | 数据预下载 | `client.download_batch(stocks, period="1m", start_time=..., end_time=...)` | 服务端缓存，后续读取更快 |
-| 期货元数据下载 | `client.download_futures_data()` | 主力合约映射等 |
+| 过期合约下载 | `client.download_history_contracts()` | 主力合约映射等 |
 
 ### 交易执行能力
 
@@ -849,7 +849,7 @@ st_autorefresh(interval=10_000, key="dashboard_refresh")  # 每10秒
 
 ```
 Step 1  下载数据
-        ├── client.download_futures_data()             # 期货元数据
+        ├── client.download_history_contracts()          # 过期合约/主力合约映射
         ├── main = client.get_main_contract("AU.SHFE") # 主力合约代码
         ├── client.download_batch([main], period="1m", start_time="20250801")
         ├── client.download_batch(["518880.SH"], period="1m", start_time="20250801")
@@ -1037,7 +1037,7 @@ client = QMTClient("192.168.x.x", port=8000, api_key="xxx")
 client.get_main_contract("AU.SHFE")
 
 # 下载历史数据（服务端缓存）
-client.download_futures_data()
+client.download_history_contracts()
 client.download_batch(["518880.SH"], period="1m", start_time="20250801", end_time="20260211")
 
 # 读取历史K线（返回 {stock: DataFrame}）
