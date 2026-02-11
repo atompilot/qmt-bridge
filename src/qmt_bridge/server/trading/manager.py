@@ -38,7 +38,7 @@ class XtTraderManager:
         if result != 0:
             raise RuntimeError(f"XtQuantTrader connect failed: {result}")
 
-        result = self._trader.subscribe_account(self._account)
+        result = self._trader.subscribe(self._account)
         if result != 0:
             logger.warning("subscribe_account returned %s", result)
 

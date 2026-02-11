@@ -1,6 +1,9 @@
 # QMT Bridge — 项目快捷命令
 # 使用: just <命令>  |  just --list 查看所有命令
 
+# Windows 下使用 PowerShell 作为默认 shell
+set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
+
 # 默认命令：列出所有可用命令
 default:
     @just --list
