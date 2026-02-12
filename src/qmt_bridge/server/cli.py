@@ -1,4 +1,13 @@
-"""CLI entry point — ``qmt-server`` command."""
+"""命令行入口模块 ── ``qmt-server`` 命令。
+
+本模块提供 QMT Bridge 服务端的命令行启动入口。
+用户可通过 ``qmt-server`` 命令（或 ``python -m qmt_bridge.server.cli``）启动服务，
+支持通过命令行参数或环境变量 / .env 文件配置服务器参数。
+
+典型用法::
+
+    qmt-server --host 0.0.0.0 --port 8000 --trading --api-key my-secret-key
+"""
 
 import argparse
 import os
@@ -7,8 +16,25 @@ from .config import Settings, _load_env_file, reset_settings
 
 
 def main():
-    """Parse CLI args, build settings, and start the server."""
-    # Load .env before parsing so defaults come from env
+    """解析命令行参数，构建配置对象并启动 Uvicorn 服务器。
+
+    启动流程：
+    1. 从 .env 文件加载环境变量（已存在的环境变量不会被覆盖）
+    2. 解析命令行参数（命令行参数优先级高于环境变量）
+    3. 用参数构建 Settings 配置对象并设置为全局单例
+    4. 创建 FastAPI 应用并通过 Uvicorn 启动 HTTP 服务
+
+    命令行参数说明：
+        --host:           监听地址，默认 0.0.0.0（所有网卡）
+        --port:           监听端口，默认 8000
+        --log-level:      日志级别（critical/error/warning/info/debug）
+        --workers:        工作进程数，Windows 下建议保持 1
+        --trading:        启用交易模块（需要 miniQMT 客户端运行）
+        --api-key:        API 密钥，用于保护交易等敏感接口
+        --mini-qmt-path:  miniQMT 安装目录路径（启用交易时必须指定）
+        --account-id:     交易资金账号
+    """
+    # 优先从 .env 文件加载环境变量，使得后续参数默认值可以读取到 .env 中的配置
     _load_env_file()
 
     parser = argparse.ArgumentParser(
@@ -63,7 +89,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Build settings from CLI args (override env)
+    # 用命令行参数构建 Settings 对象（覆盖环境变量中的默认值）
     settings = Settings(
         host=args.host,
         port=args.port,
@@ -74,13 +100,16 @@ def main():
         mini_qmt_path=args.mini_qmt_path,
         trading_account_id=args.account_id,
     )
+    # 将配置对象设置为全局单例，供后续模块通过 get_settings() 获取
     reset_settings(settings)
 
     import uvicorn
 
     from .app import create_app
 
+    # 创建 FastAPI 应用实例
     app = create_app(settings)
+    # 启动 Uvicorn ASGI 服务器
     uvicorn.run(
         app,
         host=settings.host,

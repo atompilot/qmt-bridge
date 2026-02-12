@@ -114,21 +114,21 @@ with col2:
         except Exception as e:
             st.error(f"下载失败: {e}")
 
-    if st.button("下载 IPO 数据", key="btn_dl_ipo", use_container_width=True):
+with col3:
+    if st.button("下载合约元数据表", key="btn_dl_metatable", use_container_width=True):
         try:
             with st.spinner("下载中..."):
-                result = client.download_ipo_data()
-            st.success("IPO 数据下载完成")
+                result = client.download_metatable_data()
+            st.success("合约元数据表下载完成")
             st.json(result)
         except Exception as e:
             st.error(f"下载失败: {e}")
 
-with col3:
-    if st.button("下载期权数据", key="btn_dl_option", use_container_width=True):
+    if st.button("下载表格数据", key="btn_dl_tabular", use_container_width=True):
         try:
             with st.spinner("下载中..."):
-                result = client.download_option_data()
-            st.success("期权数据下载完成")
+                result = client.download_tabular_data([])
+            st.success("表格数据下载完成")
             st.json(result)
         except Exception as e:
             st.error(f"下载失败: {e}")

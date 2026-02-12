@@ -1,69 +1,43 @@
-"""Router — ETF & convertible bond endpoints /api/etf/* and /api/cb/*."""
+"""ETF 路由模块 /api/etf/*。
 
-from fastapi import APIRouter, Query
+提供 ETF 基金的列表查询和基本信息端点。
+底层调用 xtquant.xtdata 的相关接口：
+- xtdata.get_stock_list_in_sector("沪深ETF")  — 获取沪深 ETF 列表
+- xtdata.get_etf_info()                        — 获取 ETF 基本信息
+"""
+
+from fastapi import APIRouter
 from xtquant import xtdata
 
 from ..helpers import _numpy_to_python
 
-etf_router = APIRouter(prefix="/api/etf", tags=["etf"])
-cb_router = APIRouter(prefix="/api/cb", tags=["cb"])
+router = APIRouter(prefix="/api/etf", tags=["etf"])
 
 
-@etf_router.get("/list")
+@router.get("/list")
 def get_etf_list():
+    """获取沪深 ETF 列表。
+
+    Returns:
+        count: ETF 数量。
+        stocks: ETF 代码列表。
+
+    底层调用: xtdata.get_stock_list_in_sector("沪深ETF")
+    """
     stock_list = xtdata.get_stock_list_in_sector("沪深ETF")
     return {"count": len(stock_list), "stocks": stock_list}
 
 
-@etf_router.get("/info")
+@router.get("/info")
 def get_etf_info():
+    """获取全部 ETF 的基本信息。
+
+    返回所有 ETF 的基本信息，包括基金类型、跟踪指数、管理费率等。
+
+    Returns:
+        data: ETF 基本信息数据。
+
+    底层调用: xtdata.get_etf_info()
+    """
     raw = xtdata.get_etf_info()
     return {"data": _numpy_to_python(raw)}
-
-
-@cb_router.get("/info")
-def get_cb_info(
-    stock: str = Query(..., description="可转债代码"),
-):
-    raw = xtdata.get_cb_info(stock)
-    return {"stock": stock, "data": _numpy_to_python(raw)}
-
-
-# ---------------------------------------------------------------------------
-# New convertible bond endpoints (Step 5)
-# ---------------------------------------------------------------------------
-
-
-@cb_router.get("/list")
-def get_cb_list():
-    """Get all convertible bond codes."""
-    stock_list = xtdata.get_stock_list_in_sector("沪深转债")
-    return {"count": len(stock_list), "stocks": stock_list}
-
-
-@cb_router.get("/detail")
-def get_cb_detail(
-    stock: str = Query(..., description="可转债代码"),
-):
-    """Get detailed convertible bond information."""
-    raw = xtdata.get_cb_info(stock)
-    return {"stock": stock, "data": _numpy_to_python(raw)}
-
-
-@cb_router.get("/conversion_price")
-def get_cb_conversion_price(
-    stock: str = Query(..., description="可转债代码"),
-):
-    """Get convertible bond conversion price info."""
-    raw = xtdata.get_cb_info(stock)
-    data = _numpy_to_python(raw)
-    return {"stock": stock, "data": data}
-
-
-@cb_router.get("/bond_info")
-def get_bond_info(
-    stock: str = Query(..., description="可转债代码"),
-):
-    """Get bond-specific information for a convertible bond."""
-    raw = xtdata.get_cb_info(stock)
-    return {"stock": stock, "data": _numpy_to_python(raw)}

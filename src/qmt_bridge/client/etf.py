@@ -1,40 +1,30 @@
-"""ETFMixin — ETF & convertible bond client methods."""
+"""ETFMixin — ETF 数据客户端方法。
+
+封装了 ETF（交易所交易基金）相关的查询接口。
+
+底层对应 xtquant 的 ``xtdata.get_etf_info()`` 等函数。
+"""
 
 
 class ETFMixin:
-    """Client methods for /api/etf/* and /api/cb/* endpoints."""
+    """ETF 数据客户端方法集合，对应 /api/etf/* 端点。"""
 
     def get_etf_list(self) -> list[str]:
-        """Fetch lightweight ETF code list."""
+        """获取 ETF 基金代码列表。
+
+        Returns:
+            ETF 基金代码列表，如 ``["510050.SH", "159919.SZ", ...]``
+        """
         resp = self._get("/api/etf/list")
         return resp.get("stocks", [])
 
     def get_etf_info(self) -> dict:
-        """Fetch ETF subscription/redemption list."""
+        """获取 ETF 申赎信息（申购赎回清单）。
+
+        使用前需先调用 ``download_etf_info()`` 下载数据。
+
+        Returns:
+            ETF 申赎信息字典
+        """
         resp = self._get("/api/etf/info")
-        return resp.get("data", {})
-
-    def get_cb_info(self, stock: str) -> dict:
-        """Fetch convertible bond information."""
-        resp = self._get("/api/cb/info", {"stock": stock})
-        return resp.get("data", {})
-
-    def get_cb_list(self) -> list[str]:
-        """Fetch all convertible bond codes."""
-        resp = self._get("/api/cb/list")
-        return resp.get("stocks", [])
-
-    def get_cb_detail(self, stock: str) -> dict:
-        """Fetch detailed convertible bond information."""
-        resp = self._get("/api/cb/detail", {"stock": stock})
-        return resp.get("data", {})
-
-    def get_cb_conversion_price(self, stock: str) -> dict:
-        """Fetch convertible bond conversion price info."""
-        resp = self._get("/api/cb/conversion_price", {"stock": stock})
-        return resp.get("data", {})
-
-    def get_bond_info(self, stock: str) -> dict:
-        """Fetch bond-specific information."""
-        resp = self._get("/api/cb/bond_info", {"stock": stock})
         return resp.get("data", {})

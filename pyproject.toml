@@ -39,8 +39,9 @@ pandas = ["pandas>=1.5"]
 ws = ["websockets>=11.0"]
 client = ["websockets>=11.0"]
 notify = ["httpx>=0.25"]
+scripts = ["tqdm>=4.60"]
 full = [
-    "qmt-bridge[server,ws,notify]",
+    "qmt-bridge[server,ws,notify,scripts]",
 ]
 docs = [
     "mkdocs>=1.5",

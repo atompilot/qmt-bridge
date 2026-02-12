@@ -188,7 +188,7 @@ with tab4:
         else:
             try:
                 with st.spinner("查询中..."):
-                    data = client.get_cb_detail(cb_code)
+                    data = client.get_cb_info(cb_code)
                 if not data:
                     st.info("未获取到可转债详情。")
                 else:

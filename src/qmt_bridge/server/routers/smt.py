@@ -1,100 +1,122 @@
-"""Router — SMT (约定式交易) endpoints /api/smt/* (requires API Key)."""
+"""约定式交易（SMT）路由模块 /api/smt/*（需要 API Key 认证）。
 
-from fastapi import APIRouter, Depends
+对齐 xttrader 真实 SMT API：
+- smt_query_quoter — 查询报价方
+- smt_query_compact — 查询约定合约
+- smt_query_order — 查询 SMT 委托
+- smt_negotiate_order_async — 协商下单
+- smt_appointment_order_async — 预约委托
+- smt_appointment_cancel_async — 取消预约
+- smt_compact_renewal_async — 合约展期
+- smt_compact_return_async — 合约归还
+"""
+
+from fastapi import APIRouter, Depends, Query
 
 from ..deps import get_trader_manager
-from ..helpers import _numpy_to_python
-from ..models import SMTNegotiateOrderRequest, SMTOrderRequest, SMTQueryRequest
+from ..helpers import _numpy_to_python, ok_response
+from ..models import (
+    SMTAppointmentCancelRequest,
+    SMTAppointmentOrderRequest,
+    SMTCompactRenewalRequest,
+    SMTCompactReturnRequest,
+    SMTNegotiateOrderRequest,
+)
 from ..security import require_api_key
 
 router = APIRouter(prefix="/api/smt", tags=["smt"], dependencies=[Depends(require_api_key)])
 
 
-@router.post("/order")
-def smt_order(req: SMTOrderRequest, manager=Depends(get_trader_manager)):
-    """Place an SMT order."""
-    result = manager.smt_order(
-        stock_code=req.stock_code,
-        order_type=req.order_type,
-        order_volume=req.order_volume,
-        price_type=req.price_type,
-        price=req.price,
-        smt_type=req.smt_type,
-        strategy_name=req.strategy_name,
-        order_remark=req.order_remark,
-        account_id=req.account_id,
-    )
-    return {"order_id": result, "status": "submitted"}
-
-
-@router.post("/negotiate_order_async")
-def smt_negotiate_order_async(req: SMTNegotiateOrderRequest, manager=Depends(get_trader_manager)):
-    """Place an SMT negotiate order asynchronously (result via WebSocket callback)."""
-    result = manager.smt_negotiate_order_async(
-        stock_code=req.stock_code,
-        order_type=req.order_type,
-        order_volume=req.order_volume,
-        price=req.price,
-        compact_id=req.compact_id,
-        strategy_name=req.strategy_name,
-        order_remark=req.order_remark,
-        account_id=req.account_id,
-    )
-    return {"seq": result, "status": "async_submitted"}
-
-
-@router.post("/cancel")
-def cancel_smt_order(order_id: int, account_id: str = "", manager=Depends(get_trader_manager)):
-    """Cancel an SMT order."""
-    result = manager.cancel_smt_order(order_id=order_id, account_id=account_id)
-    return {"status": "ok", "data": _numpy_to_python(result)}
-
-
 @router.get("/quoter")
 def smt_query_quoter(
-    account_id: str = "",
+    account_id: str = Query("", description="交易账户 ID"),
     manager=Depends(get_trader_manager),
 ):
-    """Query SMT quoter information (报价方信息)."""
+    """查询报价方信息 → manager.smt_query_quoter()"""
     result = manager.smt_query_quoter(account_id=account_id)
-    return {"data": _numpy_to_python(result)}
+    return ok_response(_numpy_to_python(result))
 
 
 @router.get("/compact")
 def smt_query_compact(
-    account_id: str = "",
+    account_id: str = Query("", description="交易账户 ID"),
     manager=Depends(get_trader_manager),
 ):
-    """Query SMT compacts (约定合约)."""
+    """查询约定合约列表 → manager.smt_query_compact()"""
     result = manager.smt_query_compact(account_id=account_id)
-    return {"data": _numpy_to_python(result)}
+    return ok_response(_numpy_to_python(result))
 
 
-@router.get("/appointment")
-def query_appointment_info(
-    account_id: str = "",
+@router.get("/orders")
+def smt_query_order(
+    account_id: str = Query("", description="交易账户 ID"),
     manager=Depends(get_trader_manager),
 ):
-    """Query SMT appointment info (约定式预约信息)."""
-    result = manager.query_appointment_info(account_id=account_id)
-    return {"data": _numpy_to_python(result)}
+    """查询 SMT 委托 → manager.smt_query_order()"""
+    result = manager.smt_query_order(account_id=account_id)
+    return ok_response(_numpy_to_python(result))
 
 
-@router.get("/secu_info")
-def query_smt_secu_info(
-    account_id: str = "",
-    manager=Depends(get_trader_manager),
-):
-    """Query SMT security info (约定式证券信息)."""
-    result = manager.query_smt_secu_info(account_id=account_id)
-    return {"data": _numpy_to_python(result)}
+@router.post("/negotiate_order_async")
+def smt_negotiate_order_async(req: SMTNegotiateOrderRequest, manager=Depends(get_trader_manager)):
+    """异步协商下单 → manager.smt_negotiate_order_async()"""
+    result = manager.smt_negotiate_order_async(
+        src_group_id=req.src_group_id,
+        order_code=req.order_code,
+        date=req.date,
+        amount=req.amount,
+        apply_rate=req.apply_rate,
+        dict_param=req.dict_param,
+        account_id=req.account_id,
+    )
+    return ok_response(_numpy_to_python(result))
 
 
-@router.get("/secu_rate")
-def query_smt_secu_rate(
-    account_id: str = "",
-    manager=Depends(get_trader_manager),
-):
-    """Query SMT security rates (约定式证券费率)."""
-    result = manager.query_smt_secu_rate(account_id=account_id)
-    return {"data": _numpy_to_python(result)}
+@router.post("/appointment_order_async")
+def smt_appointment_order_async(req: SMTAppointmentOrderRequest, manager=Depends(get_trader_manager)):
+    """异步预约委托 → manager.smt_appointment_order_async()"""
+    result = manager.smt_appointment_order_async(
+        order_code=req.order_code,
+        date=req.date,
+        amount=req.amount,
+        apply_rate=req.apply_rate,
+        account_id=req.account_id,
+    )
+    return ok_response(_numpy_to_python(result))
+
+
+@router.post("/appointment_cancel_async")
+def smt_appointment_cancel_async(req: SMTAppointmentCancelRequest, manager=Depends(get_trader_manager)):
+    """异步取消预约 → manager.smt_appointment_cancel_async()"""
+    result = manager.smt_appointment_cancel_async(
+        apply_id=req.apply_id,
+        account_id=req.account_id,
+    )
+    return ok_response(_numpy_to_python(result))
+
+
+@router.post("/compact_renewal_async")
+def smt_compact_renewal_async(req: SMTCompactRenewalRequest, manager=Depends(get_trader_manager)):
+    """异步合约展期 → manager.smt_compact_renewal_async()"""
+    result = manager.smt_compact_renewal_async(
+        cash_compact_id=req.cash_compact_id,
+        order_code=req.order_code,
+        defer_days=req.defer_days,
+        defer_num=req.defer_num,
+        apply_rate=req.apply_rate,
+        account_id=req.account_id,
+    )
+    return ok_response(_numpy_to_python(result))
+
+
+@router.post("/compact_return_async")
+def smt_compact_return_async(req: SMTCompactReturnRequest, manager=Depends(get_trader_manager)):
+    """异步合约归还 → manager.smt_compact_return_async()"""
+    result = manager.smt_compact_return_async(
+        src_group_id=req.src_group_id,
+        cash_compact_id=req.cash_compact_id,
+        order_code=req.order_code,
+        occur_amount=req.occur_amount,
+        account_id=req.account_id,
+    )
+    return ok_response(_numpy_to_python(result))

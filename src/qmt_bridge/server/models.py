@@ -1,13 +1,20 @@
-"""QMT Bridge — Pydantic request/response models."""
+"""Pydantic 请求/响应模型定义模块。
 
-from pydantic import BaseModel
+本模块定义了 QMT Bridge 所有 REST API 端点的请求体模型（Request Models）。
+这些模型基于 Pydantic BaseModel，FastAPI 会自动完成 JSON 反序列化和参数校验。
+
+所有模型字段严格对齐 xtquant 原始 API 参数命名。
+"""
+
+from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
-# Legacy / Download models
+# 数据下载模型
 # ---------------------------------------------------------------------------
 
 class DownloadRequest(BaseModel):
+    """单只股票历史数据下载请求。"""
     stock: str
     period: str = "1d"
     start: str = ""
@@ -15,142 +22,276 @@ class DownloadRequest(BaseModel):
 
 
 class BatchDownloadRequest(BaseModel):
-    stocks: list[str]
+    """批量股票历史数据下载请求。"""
+    stock_list: list[str] = Field(default=[], alias="stocks")
     period: str = "1d"
     start_time: str = ""
     end_time: str = ""
 
+    model_config = {"populate_by_name": True}
+
 
 class FinancialDownloadRequest(BaseModel):
-    stocks: list[str]
-    tables: list[str] = []
+    """财务数据下载请求。"""
+    stock_list: list[str] = Field(default=[], alias="stocks")
+    table_list: list[str] = Field(default=[], alias="tables")
     start_time: str = ""
     end_time: str = ""
 
+    model_config = {"populate_by_name": True}
+
+
+class FinancialDownload2Request(BaseModel):
+    """财务数据下载请求（第二版接口）。"""
+    stock_list: list[str] = Field(default=[], alias="stocks")
+    table_list: list[str] = Field(default=[], alias="tables")
+
+    model_config = {"populate_by_name": True}
+
+
+class HisSTDataDownloadRequest(BaseModel):
+    """历史 ST 数据下载请求。"""
+    stock_list: list[str] = Field(default=[], alias="stocks")
+    period: str = "1d"
+    start_time: str = ""
+    end_time: str = ""
+
+    model_config = {"populate_by_name": True}
+
+
+class TabularDataDownloadRequest(BaseModel):
+    """表格数据下载请求。"""
+    table_list: list[str] = Field(default=[], alias="tables")
+
+    model_config = {"populate_by_name": True}
+
 
 # ---------------------------------------------------------------------------
-# Sector write models
+# 板块管理模型
 # ---------------------------------------------------------------------------
 
 class CreateSectorFolderRequest(BaseModel):
+    """创建板块分类文件夹请求。"""
     folder_name: str
 
 
 class CreateSectorRequest(BaseModel):
+    """创建自定义板块请求。"""
     sector_name: str
     parent_node: str = ""
 
 
 class AddSectorStocksRequest(BaseModel):
+    """向板块添加成分股请求。"""
     sector_name: str
-    stocks: list[str]
+    stock_list: list[str] = Field(default=[], alias="stocks")
+
+    model_config = {"populate_by_name": True}
 
 
 class RemoveSectorStocksRequest(BaseModel):
+    """从板块移除成分股请求。"""
     sector_name: str
-    stocks: list[str]
+    stock_list: list[str] = Field(default=[], alias="stocks")
+
+    model_config = {"populate_by_name": True}
 
 
 class ResetSectorRequest(BaseModel):
+    """重置板块成分股请求。"""
     sector_name: str
-    stocks: list[str]
+    stock_list: list[str] = Field(default=[], alias="stocks")
+
+    model_config = {"populate_by_name": True}
 
 
 # ---------------------------------------------------------------------------
-# Trading models
+# 普通交易委托模型
 # ---------------------------------------------------------------------------
 
 class OrderRequest(BaseModel):
+    """股票委托下单请求。"""
     account_id: str = ""
     stock_code: str
-    order_type: int  # xtconstant order type
+    order_type: int
     order_volume: int
-    price_type: int = 5  # LATEST_PRICE
+    price_type: int = 5
     price: float = 0.0
     strategy_name: str = ""
     order_remark: str = ""
 
 
 class CancelRequest(BaseModel):
+    """撤单请求。"""
     account_id: str = ""
     order_id: int
 
 
+class CancelBySysidRequest(BaseModel):
+    """按系统编号撤单请求。"""
+    account_id: str = ""
+    market: str
+    sysid: str
+
+
 class QueryOrderRequest(BaseModel):
+    """查询委托单请求。"""
     account_id: str = ""
     cancelable_only: bool = False
 
 
 class QueryPositionRequest(BaseModel):
+    """查询持仓请求。"""
     account_id: str = ""
 
 
 class QueryAssetRequest(BaseModel):
+    """查询资产请求。"""
     account_id: str = ""
 
 
 # ---------------------------------------------------------------------------
-# Credit trading models
+# 信用交易（融资融券）模型
 # ---------------------------------------------------------------------------
 
 class CreditOrderRequest(BaseModel):
+    """信用交易委托请求（通过 order_type 常量区分融资/融券）。"""
     account_id: str = ""
     stock_code: str
     order_type: int
     order_volume: int
     price_type: int = 5
     price: float = 0.0
-    credit_type: str = "fin_buy"  # fin_buy / slo_sell / buy_back / sell_back
     strategy_name: str = ""
     order_remark: str = ""
 
 
-class CreditQueryRequest(BaseModel):
-    account_id: str = ""
-
-
 # ---------------------------------------------------------------------------
-# Fund transfer models
+# 资金划转模型
 # ---------------------------------------------------------------------------
 
 class FundTransferRequest(BaseModel):
-    account_id: str = ""
-    transfer_direction: int  # 0: in, 1: out
-    amount: float
-
-
-class BankTransferRequest(BaseModel):
+    """资金划转请求。"""
     account_id: str = ""
     transfer_direction: int
     amount: float
-    bank_code: str = ""
 
 
 # ---------------------------------------------------------------------------
-# SMT models
+# 银证转账模型（对齐 xttrader 真实 API）
 # ---------------------------------------------------------------------------
 
-class SMTOrderRequest(BaseModel):
+class BankTransferRequest(BaseModel):
+    """银证转账请求。"""
     account_id: str = ""
+    bank_no: str
+    bank_account: str
+    balance: float
+    bank_pwd: str = ""
+    fund_pwd: str = ""
+
+
+class BankAmountQueryRequest(BaseModel):
+    """银行余额查询请求（含密码，故用 POST）。"""
+    account_id: str = ""
+    bank_no: str
+    bank_account: str
+    bank_pwd: str
+
+
+class BankTransferStreamRequest(BaseModel):
+    """银证转账流水查询请求。"""
+    account_id: str = ""
+    start_date: str
+    end_date: str
+    bank_no: str = ""
+    bank_account: str = ""
+
+
+# ---------------------------------------------------------------------------
+# CTP 跨市场资金划转模型
+# ---------------------------------------------------------------------------
+
+class CTPCrossMarketTransferRequest(BaseModel):
+    """CTP 跨市场资金划转请求（期权/期货双账户）。"""
+    opt_account_id: str
+    ft_account_id: str
+    balance: float
+
+
+# ---------------------------------------------------------------------------
+# 证券划转模型
+# ---------------------------------------------------------------------------
+
+class SecuTransferRequest(BaseModel):
+    """证券划转请求。"""
+    account_id: str = ""
+    transfer_direction: int
     stock_code: str
-    order_type: int
-    order_volume: int
-    price_type: int = 5
-    price: float = 0.0
-    smt_type: str = ""
-    strategy_name: str = ""
-    order_remark: str = ""
+    volume: int
+    transfer_type: int
+
+
+# ---------------------------------------------------------------------------
+# 转融通（SMT）模型
+# ---------------------------------------------------------------------------
+
+class SMTNegotiateOrderRequest(BaseModel):
+    """转融通协商成交委托请求（对齐 xttrader 真实参数）。"""
+    account_id: str = ""
+    src_group_id: str
+    order_code: str
+    date: str
+    amount: float
+    apply_rate: float
+    dict_param: dict = {}
+
+
+class SMTAppointmentOrderRequest(BaseModel):
+    """转融通预约委托请求。"""
+    account_id: str = ""
+    order_code: str
+    date: str
+    amount: float
+    apply_rate: float
+
+
+class SMTAppointmentCancelRequest(BaseModel):
+    """转融通预约取消请求。"""
+    account_id: str = ""
+    apply_id: str
+
+
+class SMTCompactRenewalRequest(BaseModel):
+    """转融通合约展期请求。"""
+    account_id: str = ""
+    cash_compact_id: str
+    order_code: str
+    defer_days: int
+    defer_num: int
+    apply_rate: float
+
+
+class SMTCompactReturnRequest(BaseModel):
+    """转融通合约归还请求。"""
+    account_id: str = ""
+    src_group_id: str
+    cash_compact_id: str
+    order_code: str
+    occur_amount: float
 
 
 class SMTQueryRequest(BaseModel):
+    """转融通账户查询请求。"""
     account_id: str = ""
 
 
 # ---------------------------------------------------------------------------
-# Formula / Model API models
+# 公式/模型计算模型
 # ---------------------------------------------------------------------------
 
 class CallFormulaRequest(BaseModel):
+    """单只股票公式计算请求。"""
     formula_name: str
     stock_code: str
     period: str = "1d"
@@ -162,6 +303,7 @@ class CallFormulaRequest(BaseModel):
 
 
 class CallFormulaBatchRequest(BaseModel):
+    """批量股票公式计算请求。"""
     formula_name: str
     stock_codes: list[str]
     period: str = "1d"
@@ -173,28 +315,35 @@ class CallFormulaBatchRequest(BaseModel):
 
 
 class GenerateIndexDataRequest(BaseModel):
+    """自定义指数数据生成请求。"""
     index_code: str
-    stocks: list[str]
+    stock_list: list[str] = Field(default=[], alias="stocks")
     weights: list[float]
     period: str = "1d"
     start_time: str = ""
     end_time: str = ""
 
+    model_config = {"populate_by_name": True}
+
+
+class CreateFormulaRequest(BaseModel):
+    """创建公式请求。"""
+    formula_name: str
+    formula_file: str
+    formula_type: str = ""
+
+
+class ImportFormulaRequest(BaseModel):
+    """导入公式请求。"""
+    formula_file: str
+
 
 # ---------------------------------------------------------------------------
-# Additional download models
-# ---------------------------------------------------------------------------
-
-class FinancialDownload2Request(BaseModel):
-    stocks: list[str]
-    tables: list[str] = []
-
-
-# ---------------------------------------------------------------------------
-# Async order models
+# 异步委托模型
 # ---------------------------------------------------------------------------
 
 class AsyncOrderRequest(BaseModel):
+    """异步委托下单请求。"""
     account_id: str = ""
     stock_code: str
     order_type: int
@@ -206,44 +355,38 @@ class AsyncOrderRequest(BaseModel):
 
 
 class AsyncCancelRequest(BaseModel):
+    """异步撤单请求。"""
     account_id: str = ""
     order_id: int
 
 
 # ---------------------------------------------------------------------------
-# Export / Sync models
+# 数据导出/同步模型（对齐 xttrader 真实签名）
 # ---------------------------------------------------------------------------
 
 class ExportDataRequest(BaseModel):
+    """数据导出请求。"""
     account_id: str = ""
-    data_type: str = "orders"
-    file_path: str = ""
+    result_path: str
+    data_type: str
+    start_time: str = ""
+    end_time: str = ""
+    user_param: str = ""
+
+
+class QueryDataRequest(BaseModel):
+    """数据查询请求。"""
+    account_id: str = ""
+    result_path: str
+    data_type: str
+    start_time: str = ""
+    end_time: str = ""
+    user_param: str = ""
 
 
 class SyncTransactionRequest(BaseModel):
+    """交易数据同步请求。"""
     account_id: str = ""
-    data: list[dict] = []
-
-
-# ---------------------------------------------------------------------------
-# CTP cross-market transfer models
-# ---------------------------------------------------------------------------
-
-class CTPCrossMarketTransferRequest(BaseModel):
-    account_id: str = ""
-    amount: float
-
-
-# ---------------------------------------------------------------------------
-# SMT appointment / negotiate models
-# ---------------------------------------------------------------------------
-
-class SMTNegotiateOrderRequest(BaseModel):
-    account_id: str = ""
-    stock_code: str
-    order_type: int
-    order_volume: int
-    price: float = 0.0
-    compact_id: str = ""
-    strategy_name: str = ""
-    order_remark: str = ""
+    operation: str
+    data_type: str
+    deal_list: list[dict] = []

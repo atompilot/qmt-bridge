@@ -26,6 +26,7 @@ QMT Bridge 解决这个问题：Windows 电脑作为数据中转站，运行 QMT
 - **程序化交易** (可选) — 下单、撤单、批量委托、融资融券、银证转账、智能交易
 - **零依赖客户端** — Python 客户端基于 stdlib，无需安装 xtquant 即可在任意平台使用
 - **API Key 认证** — 可选的 API Key 保护，交易端点强制认证
+- **自动预下载** — 服务启动时自动下载板块、日历、指数权重等基础数据，之后每日定时刷新，客户端无需手动触发
 
 ## Prerequisites
 
@@ -134,6 +135,27 @@ curl http://<Windows局域网IP>:8000/api/meta/health
 | `QMT_BRIDGE_MINI_QMT_PATH` | `--mini-qmt-path` | _(空)_ | miniQMT 安装路径（交易模块需要） |
 | `QMT_BRIDGE_TRADING_ACCOUNT_ID` | `--account-id` | _(空)_ | 交易账户 ID |
 
+## Auto Pre-download（自动预下载）
+
+服务端启动时会自动在后台执行一轮基础数据预下载，之后每 24 小时自动刷新。客户端无需手动调用 `/api/download/*` 即可直接查询板块、日历、指数权重等数据。
+
+| 下载项 | 说明 |
+|-------|------|
+| `download_sector_data` | 板块分类与成分股 |
+| `download_holiday_data` | 节假日日历 |
+| `download_history_contracts` | 期货/期权过期合约映射 |
+| `download_index_weight` | 指数成分权重 |
+| `download_etf_info` | ETF 申赎清单 |
+| `download_cb_data` | 可转债数据 |
+
+以下接口 **不纳入** 自动调度，仍需客户端按需调用：
+
+- `download_history_data2` — 需要具体股票代码与时间范围
+- `download_financial_data2` — 需要股票代码，且耗时较长
+- `download_metatable_data` — 合约元数据表，按需获取即可
+
+调度基于 `asyncio` 后台协程实现，无第三方依赖。预下载日志可在服务端输出中查看（关键字：`预下载完成` / `预下载失败`）。
+
 ## API Reference
 
 完整 API 文档请访问运行中的服务 `/docs`（Swagger UI）或 `/redoc`（ReDoc）。以下为端点概览。
@@ -153,9 +175,9 @@ curl http://<Windows局域网IP>:8000/api/meta/health
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/market/snapshot` | 实时行情快照（个股 / 指数） |
+| GET | `/api/market/full_tick` | 实时行情快照（个股 / 指数） |
 | GET | `/api/market/indices` | 主要指数行情概览 |
-| GET | `/api/market/history_ex` | 增强版 K 线（除权、填充） |
+| GET | `/api/market/market_data_ex` | 增强版 K 线（除权、填充） |
 | GET | `/api/market/local_data` | 仅读本地缓存（离线可用） |
 | GET | `/api/market/divid_factors` | 除权因子 |
 | GET | `/api/market/market_data` | 通用行情数据查询 |
@@ -204,11 +226,11 @@ curl http://<Windows局域网IP>:8000/api/meta/health
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/instrument/batch_detail` | 批量合约详情 |
+| GET | `/api/instrument/detail_list` | 批量合约详情 |
 | GET | `/api/instrument/type` | 代码类型判断 |
 | GET | `/api/instrument/ipo_info` | IPO 信息 |
 | GET | `/api/instrument/index_weight` | 指数成分股权重 |
-| GET | `/api/instrument/st_history` | ST 历史 |
+| GET | `/api/instrument/his_st_data` | ST 历史 |
 
 ### Option — 期权数据 `/api/option/*`
 
@@ -217,7 +239,7 @@ curl http://<Windows局域网IP>:8000/api/meta/health
 | GET | `/api/option/detail` | 期权合约详情 |
 | GET | `/api/option/chain` | 标的期权链 |
 | GET | `/api/option/list` | 按到期日 / 类型筛选 |
-| GET | `/api/option/history_list` | 历史期权列表 |
+| GET | `/api/option/his_option_list` | 历史期权列表 |
 
 ### ETF & Convertible Bond — `/api/etf/*` & `/api/cb/*`
 
@@ -226,9 +248,7 @@ curl http://<Windows局域网IP>:8000/api/meta/health
 | GET | `/api/etf/list` | ETF 代码列表 |
 | GET | `/api/etf/info` | ETF 申赎清单 |
 | GET | `/api/cb/list` | 可转债列表 |
-| GET | `/api/cb/detail` | 可转债详情 |
-| GET | `/api/cb/conversion_price` | 转股价信息 |
-| GET | `/api/cb/bond_info` | 债券信息 |
+| GET | `/api/cb/info` | 可转债信息 |
 
 ### Futures — 期货数据 `/api/futures/*`
 
@@ -253,7 +273,7 @@ curl http://<Windows局域网IP>:8000/api/meta/health
 | GET | `/api/meta/xtdata_version` | xtquant 版本 |
 | GET | `/api/meta/connection_status` | xtdata 连接状态 |
 | GET | `/api/meta/markets` | 可用市场列表 |
-| GET | `/api/meta/periods` | K 线周期列表 |
+| GET | `/api/meta/period_list` | K 线周期列表 |
 | GET | `/api/meta/stock_list` | 按类别获取证券列表 |
 | GET | `/api/meta/last_trade_date` | 最近交易日 |
 
@@ -261,15 +281,13 @@ curl http://<Windows局域网IP>:8000/api/meta/health
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/download/batch` | 批量下载历史数据 |
-| POST | `/api/download/financial` | 下载财务数据 |
+| POST | `/api/download/history_data2` | 批量下载历史数据 |
+| POST | `/api/download/financial_data` | 下载财务数据 |
 | POST | `/api/download/sector_data` | 下载板块数据 |
 | POST | `/api/download/index_weight` | 下载指数权重 |
 | POST | `/api/download/etf_info` | 下载 ETF 信息 |
 | POST | `/api/download/cb_data` | 下载可转债数据 |
 | POST | `/api/download/history_contracts` | 下载过期合约 |
-| POST | `/api/download/ipo_data` | 下载 IPO 数据 |
-| POST | `/api/download/option_data` | 下载期权数据 |
 
 ### Trading — 交易 `/api/trading/*` (需要 API Key)
 
@@ -420,13 +438,13 @@ curl http://192.168.1.100:8000/api/meta/health
 curl "http://192.168.1.100:8000/api/history?stock=000001.SZ&period=1d&count=60"
 
 # 增强版 K 线，前复权
-curl "http://192.168.1.100:8000/api/market/history_ex?stocks=000001.SZ&period=1d&count=5&dividend_type=front"
+curl "http://192.168.1.100:8000/api/market/market_data_ex?stocks=000001.SZ&period=1d&count=5&dividend_type=front"
 
 # 大盘行情
 curl http://192.168.1.100:8000/api/market/indices
 
 # 个股 / 指数快照
-curl "http://192.168.1.100:8000/api/market/snapshot?stocks=000001.SH,000001.SZ"
+curl "http://192.168.1.100:8000/api/market/full_tick?stocks=000001.SH,000001.SZ"
 
 # 板块列表
 curl http://192.168.1.100:8000/api/sector/list
@@ -447,7 +465,7 @@ curl "http://192.168.1.100:8000/api/instrument/index_weight?index_code=000300.SH
 curl "http://192.168.1.100:8000/api/financial/data?stocks=000001.SZ&tables=Balance"
 
 # 批量下载历史数据
-curl -X POST http://192.168.1.100:8000/api/download/batch \
+curl -X POST http://192.168.1.100:8000/api/download/history_data2 \
   -H "Content-Type: application/json" \
   -d '{"stocks": ["000001.SZ", "600519.SH"], "period": "1d"}'
 
@@ -475,6 +493,7 @@ qmt-bridge/
 │   │   ├── cli.py                  # qmt-server CLI 入口
 │   │   ├── config.py               # 配置加载
 │   │   ├── security.py             # API Key 认证
+│   │   ├── scheduler.py            # 后台数据预下载调度
 │   │   ├── helpers.py              # 数据转换工具
 │   │   ├── models.py               # Pydantic 请求 / 响应模型
 │   │   ├── deps.py                 # 依赖注入

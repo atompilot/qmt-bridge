@@ -49,6 +49,12 @@ serve-stop:
     @echo "正在查找 qmt-server 进程..."
     Get-NetTCPConnection -LocalPort 18888 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }; if ($?) { echo "✅ qmt-server 已停止" } else { echo "⚠️ 未找到运行中的 qmt-server" }
 
+# ─────────────────────────── 数据下载 ─────────────────────────
+
+# 全量下载 A 股历史行情 + 财务数据（首次耗时较长）
+download-all *ARGS:
+    python scripts/download_all.py {{ARGS}}
+
 # ─────────────────────────── 仪表盘 ─────────────────────────
 
 # 启动可视化仪表盘（http://localhost:8501）
