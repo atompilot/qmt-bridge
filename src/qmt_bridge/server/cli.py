@@ -103,6 +103,17 @@ def main():
     # 将配置对象设置为全局单例，供后续模块通过 get_settings() 获取
     reset_settings(settings)
 
+    # 为应用自身的 logger 配置 handler，使 qmt_bridge.* 的日志能输出到控制台。
+    # Uvicorn 只配置 uvicorn.* 系列 logger，不会影响应用自定义的 logger。
+    import logging
+
+    app_logger = logging.getLogger("qmt_bridge")
+    app_logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s - %(message)s"))
+        app_logger.addHandler(handler)
+
     import uvicorn
 
     from .app import create_app

@@ -52,5 +52,8 @@ logs/
 htmlcov/
 .coverage
 
+# Deprecated code
+.trash/
+
 # Documentation build output
 site/

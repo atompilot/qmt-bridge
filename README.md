@@ -344,6 +344,62 @@ WebSocket 连接后发送 JSON 订阅请求：
 { "stocks": ["000001.SZ"], "period": "1d", "start_time": "", "end_time": "" }
 ```
 
+## Realtime K-line（实时 K 线）
+
+构建盘中实时 K 线的标准模式：**REST 拉历史 + WebSocket 推增量**。
+
+```
+            初始化                                持续更新
+┌──────────────────────────┐     ┌──────────────────────────────────┐
+│ GET /api/market/          │     │ WS  /ws/realtime                 │
+│     market_data_ex        │     │     {"stocks":["000001.SZ"],     │
+│   period=1m, count=240    │     │      "period":"1m"}              │
+│                           │     │                                  │
+│   ← 返回 240 根已完结 K 线  │     │   ← 持续推送最新 1m K 线柱        │
+└────────────┬─────────────┘     └──────────────┬───────────────────┘
+             │                                  │
+             ▼                                  ▼
+      ┌─────────────────────────────────────────────────┐
+      │  客户端本地 K 线数组                               │
+      │  - 初始化：填充历史数据                             │
+      │  - 推送到来时：                                    │
+      │    · 时间戳 == 最后一根 → 更新（盘中未完结柱）        │
+      │    · 时间戳 > 最后一根  → 追加（新柱）               │
+      └─────────────────────────────────────────────────┘
+```
+
+**步骤：**
+
+1. **拉取历史** — 调用 REST 接口获取已完结的历史 K 线填充图表
+2. **订阅实时** — 连接 WebSocket，订阅相同周期（如 `1m`）
+3. **客户端合并** — WebSocket 推送的是 xtdata 聚合好的 K 线柱（非原始 tick），按时间戳判断是更新最后一根还是追加新柱
+
+> **注意：** `subscribe_quote(period="1m")` 推送的已经是聚合好的分钟 K 线，无需客户端自行从 tick 合成。支持的周期：`tick`、`1m`、`5m`、`15m`、`30m`、`60m`、`1d`。
+
+**Python 客户端示例：**
+
+```python
+import asyncio
+from qmt_bridge import QMTClient
+
+client = QMTClient(host="192.168.1.100")
+
+# 1. 拉取历史 K 线
+history = client.get_history_ex(["000001.SZ"], period="1m", count=240)
+
+# 2. WebSocket 订阅实时更新
+def on_kline(data):
+    # data 是 xtdata 聚合好的 K 线柱
+    # 按时间戳与本地数组最后一根比较：相同则更新，更大则追加
+    print(data)
+
+asyncio.run(client.subscribe_realtime(
+    stocks=["000001.SZ"],
+    period="1m",       # 订阅 1 分钟 K 线（非 tick）
+    callback=on_kline,
+))
+```
+
 ## Python Client
 
 项目附带零依赖 Python 客户端，可在任意平台使用（无需安装 xtquant）。

@@ -165,20 +165,24 @@ with tab4:
 
     st.markdown("---")
 
-    st.subheader("ETF 申赎信息")
-    if st.button("获取 ETF 申赎信息", key="btn_etf_info"):
-        try:
-            with st.spinner("查询中..."):
-                data = client.get_etf_info()
-            if not data:
-                st.info("未获取到 ETF 申赎信息。")
-            else:
-                if isinstance(data, list):
-                    st.dataframe(pd.DataFrame(data), use_container_width=True)
+    st.subheader("ETF 成分股查询")
+    etf_code = st.text_input("ETF 代码", value="510300.SH", key="etf_info_code")
+    if st.button("查询 ETF 成分股", key="btn_etf_info"):
+        if not etf_code:
+            st.warning("请输入 ETF 代码。")
+        else:
+            try:
+                with st.spinner("查询中..."):
+                    data = client.get_etf_info(etf_code)
+                if data.get("error"):
+                    st.warning(data["error"])
                 else:
-                    st.json(data)
-        except Exception as e:
-            st.error(f"查询失败: {e}")
+                    st.success(f"{data.get('name', etf_code)} — 成分股 {data.get('component_count', 0)} 只，净值 {data.get('nav', '')}")
+                    components = data.get("components", [])
+                    if components:
+                        st.dataframe(pd.DataFrame(components), use_container_width=True, height=300)
+            except Exception as e:
+                st.error(f"查询失败: {e}")
 
     st.subheader("可转债详情")
     cb_code = st.text_input("可转债代码", key="cb_detail_code")

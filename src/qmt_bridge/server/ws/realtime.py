@@ -9,6 +9,18 @@
 4. xtdata 在后台线程中推送行情数据，通过 asyncio.run_coroutine_threadsafe
    桥接到 WebSocket 发送给客户端
 5. 客户端断开连接时自动取消订阅
+
+实时 K 线构建（REST 拉历史 + WS 推增量）：
+    period 不仅支持 "tick"，也支持 "1m"/"5m"/"1d" 等 K 线周期。
+    subscribe_quote(period="1m") 推送的是 xtdata 聚合好的分钟 K 线柱，
+    而非原始 tick，客户端无需自行合成。
+
+    客户端标准用法：
+    1. 先调 REST GET /api/market/market_data_ex (period="1m") 拉取历史 K 线
+    2. 再连本 WS 端点，订阅相同周期 {"stocks": [...], "period": "1m"}
+    3. 收到推送后按时间戳与本地数组末尾比较：
+       - 时间戳相同 → 更新最后一根（盘中未完结柱）
+       - 时间戳更大 → 追加新柱
 """
 
 import asyncio

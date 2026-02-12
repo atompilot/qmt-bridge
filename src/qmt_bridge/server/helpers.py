@@ -57,6 +57,19 @@ def _numpy_to_python(obj):
     if isinstance(obj, (np.bool_,)):
         # numpy 布尔类型转 Python bool
         return bool(obj)
+    # 兜底：处理 xtquant C 扩展对象（XtAsset / XtPosition / XtOrder 等）
+    # 这些对象不支持 dict() 和 vars()，但可通过 dir() 提取公共属性
+    if not isinstance(obj, (str, bytes, int, bool, type(None))):
+        try:
+            attrs = {
+                k: _numpy_to_python(getattr(obj, k))
+                for k in dir(obj)
+                if not k.startswith("_") and not callable(getattr(obj, k, None))
+            }
+            if attrs:
+                return attrs
+        except Exception:
+            pass
     return obj
 
 
