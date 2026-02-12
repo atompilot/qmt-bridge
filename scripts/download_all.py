@@ -101,11 +101,6 @@ def parse_args() -> argparse.Namespace:
         default=0.2,
         help="批次间延迟秒数，缓解服务端压力 (默认: 0.2)",
     )
-    parser.add_argument(
-        "--no-incremental",
-        action="store_true",
-        help="禁用增量下载，强制重新下载所有数据 (默认启用增量)",
-    )
     return parser.parse_args()
 
 
@@ -121,12 +116,12 @@ def download_kline(
     batch_size: int,
     timeout: int = 120,
     delay: float = 0.2,
-    incremental: bool = True,
 ) -> dict[str, dict[str, int]]:
     """下载 K 线数据，返回 {period: {"ok": n, "fail": n, "timeout": n}}。
 
     通过 callback 实现逐只股票粒度的进度更新。
     每批下载有超时保护，批次间有延迟以缓解服务端压力。
+    xtdata 会根据 start_time 自动决定是否增量下载。
     """
     batches = make_batches(stocks, batch_size)
     results: dict[str, dict[str, int]] = {}
@@ -174,13 +169,11 @@ def download_kline(
                     start_time=start_time,
                     end_time="",
                     callback=_make_cb(cancelled, batch),
-                    incremental=incremental,
                 )
                 future.result(timeout=timeout)
                 ok_count += len(batch)
                 logger.debug("K线 %s 批次 %d/%d 成功 (%d 只)", period, idx+1, n_batches, len(batch))
             except FutureTimeoutError:
-                timed_out = True
                 cancelled[0] = True
                 timeout_count += 1
                 fail_count += len(batch)
@@ -225,7 +218,6 @@ def download_financial(
     batch_size: int,
     timeout: int = 120,
     delay: float = 0.2,
-    incremental: bool = True,
 ) -> dict[str, int]:
     """下载财务数据，返回 {"ok": n, "fail": n, "timeout": n}。
 
@@ -280,7 +272,6 @@ def download_financial(
                 stock_list=batch,
                 table_list=table_list,
                 callback=_make_cb(cancelled, batch, table_list),
-                incremental=incremental,
             )
             future.result(timeout=timeout)
             ok_count += len(batch)
@@ -399,10 +390,8 @@ def main() -> None:
     periods = [p.strip() for p in args.periods.split(",")]
     tables = [t.strip() for t in args.tables.split(",")]
 
-    incremental = not args.no_incremental
-    incr_label = "开启" if incremental else "关闭"
-    logger.info("增量下载: %s, 超时: %d秒/批, 延迟: %.1f秒/批", incr_label, args.timeout, args.delay)
-    print(f"增量下载: {incr_label}, 超时: {args.timeout}秒/批, 批次间延迟: {args.delay}秒")
+    logger.info("超时: %d秒/批, 延迟: %.1f秒/批", args.timeout, args.delay)
+    print(f"超时: {args.timeout}秒/批, 批次间延迟: {args.delay}秒")
 
     print()
     t0 = time.time()
@@ -413,7 +402,7 @@ def main() -> None:
         print(f"开始下载 K 线数据 (周期: {', '.join(periods)})...")
         kline_results = download_kline(
             stocks, periods, start_time, args.batch_size,
-            timeout=args.timeout, delay=args.delay, incremental=incremental,
+            timeout=args.timeout, delay=args.delay,
         )
     else:
         print("跳过 K 线下载")
@@ -424,7 +413,7 @@ def main() -> None:
         print(f"\n开始下载财务数据 (报表: {', '.join(tables)})...")
         financial_result = download_financial(
             stocks, tables, args.batch_size,
-            timeout=args.timeout, delay=args.delay, incremental=incremental,
+            timeout=args.timeout, delay=args.delay,
         )
     else:
         print("跳过财务数据下载")
