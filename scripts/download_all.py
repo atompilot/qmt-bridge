@@ -136,6 +136,7 @@ def download_kline(
         logger.info("开始下载 K 线 %s，共 %d 批 (%d 只)", period, n_batches, len(stocks))
         pbar = tqdm(total=len(stocks), desc=f"K线 {period}", unit="只")
 
+        interrupted = False
         for idx, batch in enumerate(batches):
             cancelled = [False]   # 超时/失败后禁止回调继续更新进度条
             pbar.set_description(f"K线 {period} [{idx+1}/{n_batches}批]")
@@ -185,6 +186,14 @@ def download_kline(
                 tqdm.write(
                     f"  ⚠ 批次 {idx+1}/{n_batches} 超时 ({timeout}s, {len(batch)} 只)"
                 )
+            except KeyboardInterrupt:
+                cancelled[0] = True
+                executor.shutdown(wait=False, cancel_futures=True)
+                pbar.close()
+                logger.warning("K线 %s 被用户中断 (批次 %d/%d)", period, idx+1, n_batches)
+                tqdm.write(f"\n  用户中断，K线 {period} 已完成 {ok_count}/{len(stocks)} 只")
+                interrupted = True
+                break
             except Exception as exc:
                 cancelled[0] = True
                 fail_count += len(batch)
@@ -198,8 +207,9 @@ def download_kline(
             # 批次间延迟，缓解 xtdata 服务端压力
             if delay > 0 and idx < n_batches - 1:
                 time.sleep(delay)
+        else:
+            pbar.close()
 
-        pbar.close()
         results[period] = {"ok": ok_count, "fail": fail_count, "timeout": timeout_count}
         logger.info(
             "K线 %s 完成: 成功 %d, 失败 %d (其中超时 %d)",
@@ -208,6 +218,8 @@ def download_kline(
         if failed_batches:
             logger.warning("K线 %s 失败批次索引: %s", period, failed_batches)
             tqdm.write(f"  {period} 失败批次索引: {failed_batches}")
+        if interrupted:
+            break
 
     return results
 
@@ -288,6 +300,13 @@ def download_financial(
             tqdm.write(
                 f"  ⚠ 批次 {idx+1}/{n_batches} 超时 ({timeout}s, {len(batch)} 只)"
             )
+        except KeyboardInterrupt:
+            cancelled[0] = True
+            executor.shutdown(wait=False, cancel_futures=True)
+            pbar.close()
+            logger.warning("财务数据被用户中断 (批次 %d/%d)", idx+1, n_batches)
+            tqdm.write(f"\n  用户中断，财务数据已完成 {ok_count}/{len(stocks)} 只")
+            break
         except Exception as exc:
             cancelled[0] = True
             fail_count += len(batch)
@@ -301,8 +320,9 @@ def download_financial(
         # 批次间延迟，缓解 xtdata 服务端压力
         if delay > 0 and idx < n_batches - 1:
             time.sleep(delay)
+    else:
+        pbar.close()
 
-    pbar.close()
     logger.info(
         "财务数据完成: 成功 %d, 失败 %d (其中超时 %d)",
         ok_count, fail_count, timeout_count,
@@ -395,34 +415,38 @@ def main() -> None:
 
     print()
     t0 = time.time()
-
-    # 2. K 线下载
     kline_results = None
-    if not args.skip_kline:
-        print(f"开始下载 K 线数据 (周期: {', '.join(periods)})...")
-        kline_results = download_kline(
-            stocks, periods, start_time, args.batch_size,
-            timeout=args.timeout, delay=args.delay,
-        )
-    else:
-        print("跳过 K 线下载")
-
-    # 3. 财务数据下载
     financial_result = None
-    if not args.skip_financial:
-        print(f"\n开始下载财务数据 (报表: {', '.join(tables)})...")
-        financial_result = download_financial(
-            stocks, tables, args.batch_size,
-            timeout=args.timeout, delay=args.delay,
-        )
-    else:
-        print("跳过财务数据下载")
+
+    try:
+        # 2. K 线下载
+        if not args.skip_kline:
+            print(f"开始下载 K 线数据 (周期: {', '.join(periods)})...")
+            kline_results = download_kline(
+                stocks, periods, start_time, args.batch_size,
+                timeout=args.timeout, delay=args.delay,
+            )
+        else:
+            print("跳过 K 线下载")
+
+        # 3. 财务数据下载
+        if not args.skip_financial:
+            print(f"\n开始下载财务数据 (报表: {', '.join(tables)})...")
+            financial_result = download_financial(
+                stocks, tables, args.batch_size,
+                timeout=args.timeout, delay=args.delay,
+            )
+        else:
+            print("跳过财务数据下载")
+    except KeyboardInterrupt:
+        logger.warning("用户中断 (Ctrl+C)")
+        print("\n\n用户中断 (Ctrl+C)")
 
     elapsed = time.time() - t0
 
-    # 4. 汇总
+    # 4. 汇总（即使中断也打印已完成的部分）
     print_summary(len(stocks), elapsed, kline_results, financial_result)
-    logger.info("全部完成，耗时 %.1f 秒", elapsed)
+    logger.info("完成，耗时 %.1f 秒", elapsed)
 
 
 if __name__ == "__main__":
