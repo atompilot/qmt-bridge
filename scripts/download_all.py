@@ -27,16 +27,18 @@ from pathlib import Path
 import pandas as pd
 from xtquant import xtdata
 
-# 直接调用 client.supply_history_data2() 绕过 xtquant 的 download_history_data2 bug:
-# 当 result=True（数据已缓存）时，xtquant 的轮询循环永远挂起（回调不触发）。
-try:
-    from xtquant import xtbson as _BSON_
-except ImportError:
-    import bson as _BSON_
-
-# 财务数据仍用 ThreadPoolExecutor，future.result(timeout=N) 在 Windows 上
-# 会长时间阻塞主线程导致 Ctrl+C 无响应，改用短轮询让 Python 有机会处理中断。
-POLL_INTERVAL = 0.5
+from qmt_bridge.server.downloader import (
+    download_single_kline,
+    make_batches,
+    wait_future,
+    DEFAULT_SECTORS,
+    FINANCIAL_MIN_RECORDS,
+    FINANCIAL_STALE_DAYS,
+    KLINE_HISTORY_CHECK_YEARS,
+    PROBE_BATCH_SIZE,
+    SAFETY_OVERLAP_DAYS,
+    STOCK_TIMEOUT,
+)
 
 try:
     from tqdm import tqdm
@@ -44,53 +46,6 @@ except ImportError:
     print("错误: 需要 tqdm 依赖，请先执行: pip install tqdm>=4.60")
     print("  或: pip install -e \".[scripts]\"")
     sys.exit(1)
-
-# 逐只下载，单只股票的固定超时（秒）。
-# 正常 <1 秒完成，卡死的等再久也不会好，快速跳过。
-STOCK_TIMEOUT: dict[str, int] = {
-    "1m": 10,
-    "5m": 10,
-    "15m": 10,
-    "30m": 5,
-    "60m": 5,
-    "1d": 5,
-}
-
-# ── 默认下载板块 ─────────────────────────────────────────────
-# xtdata.get_sector_list() 返回的市场板块（共 30 个，不含 SW/CSRC 行业分类）:
-#
-# 股票:
-#   沪深A股 (5189)    = 上证A股 (2306) + 深证A股 (2883)，含创业板 (1392) 和科创板 (602)
-#   沪深京A股 (5501)  = 沪深A股 + 京市A股 (312)
-#   沪深B股 (79)      = 上证B股 (41) + 深证B股 (38)
-#   科创板CDR (1)
-#
-# ETF:
-#   沪深ETF (1460)    = 沪市ETF (855) + 深市ETF (605)
-#
-# 指数:
-#   沪深指数 (609)    = 沪市指数 (221) + 深市指数 (388)
-#
-# 转债:
-#   沪深转债 (383)    = 上证转债 (187) + 深证转债 (196)
-#
-# 债券:
-#   沪深债券 (39583)  = 沪市债券 (21268) + 深市债券 (18315)
-#
-# 基金:
-#   沪深基金 (2004)   = 沪市基金 (1027) + 深市基金 (977)
-#
-# 期权:
-#   上证期权 (760), 深证期权 (616)
-#
-# 港股:
-#   香港联交所股票 (882), 香港联交所指数 (0)
-#
-DEFAULT_SECTORS = "沪深A股,沪深ETF,沪深指数"
-
-# ── 常量 ──────────────────────────────────────────────────────
-PROBE_BATCH_SIZE = 200
-SAFETY_OVERLAP_DAYS = 1
 
 # Ctrl+C 中断标记：xtdata 下载线程是非 daemon 线程，
 # 即使 executor.shutdown(wait=False) 也无法终止已运行的线程，
@@ -167,98 +122,6 @@ def save_state(state: DownloadState) -> None:
     logger.info("状态已保存: %s", STATE_FILE)
 
 
-# ── 工具函数 ──────────────────────────────────────────────────
-
-def make_batches(lst: list, size: int) -> list[list]:
-    """将列表按 size 切分为子列表。"""
-    return [lst[i : i + size] for i in range(0, len(lst), size)]
-
-
-def _download_single_kline(
-    client,
-    code: str,
-    period: str,
-    start_time: str,
-    end_time: str,
-    incrementally: bool | None,
-    timeout: float,
-) -> str:
-    """直接调用 client.supply_history_data2() 下载单只股票 K 线。
-
-    绕过 xtquant.download_history_data2 的 bug：
-    当 result=True（数据已缓存）时，xtquant 的轮询循环会永远挂起，
-    因为回调永远不会被触发。
-
-    Args:
-        incrementally: True=增量, False=全量, None=自动(start_time 非空→False, 空→True)。
-
-    Returns:
-        "ok" | "timeout" | "cached" | "error: ..." | "disconnected"
-    """
-    # 解析 incrementally: None → 根据 start_time 自动决定
-    if incrementally is None:
-        incrementally = not bool(start_time)
-    param = {"incrementally": incrementally}
-    bson_param = _BSON_.BSON.encode(param)
-
-    status = {"done": False, "error": ""}
-
-    def on_progress(data):
-        total_val = data.get("total", 0)
-        if total_val < 0:
-            status["error"] = data.get("message", "unknown error")
-            status["done"] = True
-            return True
-        finished = data.get("finished", 0)
-        if finished >= total_val and total_val > 0:
-            status["done"] = True
-        return status["done"]
-
-    result = client.supply_history_data2(
-        [code], period, start_time, end_time, bson_param, on_progress,
-    )
-
-    if result:
-        # result=True: 数据已缓存，C++ 同步返回，回调不会触发。
-        # 这就是 xtquant download_history_data2 的 bug 所在:
-        # 它在此情况下仍然无限轮询等待回调，导致永远挂起。
-        return "cached"
-
-    # result=False: 异步下载，轮询等待完成
-    deadline = time.monotonic() + timeout
-    while not status["done"]:
-        if not client.is_connected():
-            return "disconnected"
-        if time.monotonic() >= deadline:
-            return "timeout"
-        time.sleep(0.1)  # 0.1s 轮询，KeyboardInterrupt 可在此处被捕获
-
-    if status["error"]:
-        return f"error: {status['error']}"
-    return "ok"
-
-
-def _wait_future(future, timeout: float) -> None:
-    """等待 future 完成，每 POLL_INTERVAL 秒醒来检查 KeyboardInterrupt。
-
-    在 Windows 上 future.result(timeout=N) 会长时间阻塞主线程，
-    Ctrl+C 信号要等到 timeout 到期才能被处理。
-    这里用短轮询替代，确保 Ctrl+C 能在 0.5 秒内响应。
-    """
-    deadline = time.monotonic() + timeout
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise FutureTimeoutError()
-        try:
-            future.result(timeout=min(remaining, POLL_INTERVAL))
-            return  # 成功完成
-        except FutureTimeoutError:
-            if time.monotonic() >= deadline:
-                raise
-            # 未超时，继续轮询（此处 KeyboardInterrupt 可被捕获）
-
-
 def _run_kline_downloads(
     client,
     stocks: list[str],
@@ -295,11 +158,11 @@ def _run_kline_downloads(
         pbar.set_postfix_str(" | ".join(parts), refresh=True)
 
         try:
-            result = _download_single_kline(
+            result = download_single_kline(
                 client, code, period, start_time, end_time,
                 incrementally, timeout,
             )
-            if result in ("ok", "cached"):
+            if result == "ok":
                 ok_count += 1
                 logger.debug("K线 %s %s %s", period, code, result)
             elif result == "timeout":
@@ -396,7 +259,7 @@ def _run_financial_batches(
                 table_list=table_list,
                 callback=_make_financial_cb(cancelled, batch, table_list, fail_count, timeout_count, pbar),
             )
-            _wait_future(future, timeout)
+            wait_future(future, timeout)
             ok_count += len(batch)
             logger.debug("财务数据批次 %d 成功 (%d 只)", idx+1, len(batch))
         except FutureTimeoutError:
@@ -433,26 +296,24 @@ def _run_financial_batches(
     return ok_count, fail_count, timeout_count, failed_indices, False
 
 
-# 财务数据的公告日期距今超过此天数，认为数据可能过期，需重新下载。
-# 中国上市公司季报披露周期: Q1(4/30前), H1(8/31前), Q3(10/31前), 年报(4/30前)。
-# 90 天基本覆盖一个季度间隔。
-FINANCIAL_STALE_DAYS = 90
-
-
 def probe_financial_cache(
     stocks: list[str], table_list: list[str],
-) -> tuple[set[str], int]:
-    """探测哪些股票已有新鲜的本地财务数据缓存。
+) -> tuple[set[str], int, int]:
+    """探测哪些股票已有完整且新鲜的本地财务数据缓存。
 
-    只检查第一个报表的最新公告日期(m_anntime)：
-    - 距今 ≤ FINANCIAL_STALE_DAYS → 新鲜，跳过
-    - 距今 > FINANCIAL_STALE_DAYS → 过期，需重新下载
+    检查第一个报表的两个维度：
+    1. 完整性: 记录数 ≥ FINANCIAL_MIN_RECORDS
+    2. 新鲜度: 最新公告日期(m_anntime) 距今 ≤ FINANCIAL_STALE_DAYS
+
+    两项都通过才认为缓存有效，跳过下载。
+    download_financial_data2 不带日期参数 = 全量下载，自动补全所有历史数据。
 
     Returns:
-        (新鲜的股票代码集合, 过期股票数量)
+        (新鲜完整的股票代码集合, 过期股票数量, 数据不完整的股票数量)
     """
     fresh: set[str] = set()
     stale_count = 0
+    incomplete_count = 0
     check_table = table_list[0]
     stale_cutoff = (datetime.now() - timedelta(days=FINANCIAL_STALE_DAYS)).strftime("%Y%m%d")
 
@@ -466,7 +327,11 @@ def probe_financial_cache(
                 df = tables_data.get(check_table)
                 if df is None or not isinstance(df, pd.DataFrame) or df.empty:
                     continue
-                # 检查最新公告日期
+                # 1. 检查完整性：记录数是否足够
+                if len(df) < FINANCIAL_MIN_RECORDS:
+                    incomplete_count += 1
+                    continue
+                # 2. 检查新鲜度：最新公告日期
                 if "m_anntime" in df.columns:
                     max_ann = df["m_anntime"].dropna()
                     if not max_ann.empty:
@@ -478,13 +343,12 @@ def probe_financial_cache(
                     else:
                         stale_count += 1
                 else:
-                    # 无法判断日期，保守认为新鲜
                     fresh.add(stock)
         except Exception as exc:
             logger.warning("财务缓存探测批次失败: %s", exc)
         probe_pbar.update(len(batch))
     probe_pbar.close()
-    return fresh, stale_count
+    return fresh, stale_count, incomplete_count
 
 
 def download_financial(
@@ -508,22 +372,24 @@ def download_financial(
     n_original = len(stocks)
     if not full:
         tqdm.write("探测财务数据本地缓存...")
-        fresh, n_stale = probe_financial_cache(stocks, table_list)
+        fresh, n_stale, n_incomplete = probe_financial_cache(stocks, table_list)
         need_download = [s for s in stocks if s not in fresh]
         n_fresh = len(fresh)
-        n_no_data = len(need_download) - n_stale
+        n_no_data = len(need_download) - n_stale - n_incomplete
         if n_fresh:
-            tqdm.write(f"  · {n_fresh} 只缓存新鲜 (≤{FINANCIAL_STALE_DAYS}天)，跳过")
+            tqdm.write(f"  · {n_fresh} 只缓存完整且新鲜，跳过")
         if n_stale:
-            tqdm.write(f"  · {n_stale} 只缓存过期 (>{FINANCIAL_STALE_DAYS}天)，重新下载")
+            tqdm.write(f"  · {n_stale} 只缓存过期 (>{FINANCIAL_STALE_DAYS}天)，全量重下")
+        if n_incomplete:
+            tqdm.write(f"  · {n_incomplete} 只缓存不完整 (<{FINANCIAL_MIN_RECORDS}条)，全量重下")
         if n_no_data:
             tqdm.write(f"  · {n_no_data} 只无缓存，全新下载")
         logger.info(
-            "财务缓存探测: 新鲜 %d, 过期 %d, 无缓存 %d",
-            n_fresh, n_stale, n_no_data,
+            "财务缓存探测: 新鲜 %d, 过期 %d, 不完整 %d, 无缓存 %d",
+            n_fresh, n_stale, n_incomplete, n_no_data,
         )
         if not need_download:
-            tqdm.write("  · 全部已有缓存，跳过财务数据下载")
+            tqdm.write("  · 全部缓存有效，跳过财务数据下载")
             return {"ok": n_original, "fail": 0, "timeout": 0}
         stocks = need_download
 
@@ -784,32 +650,63 @@ def download_kline_v2(
             tqdm.write(f"\n探测 {period} 本地缓存...")
             local_dates = probe_local_dates(stocks, period)
             today_str = datetime.now().strftime("%Y%m%d")
-            # 按缺口天数降序排列：无缓存 > 缓存最旧 > 缓存最新
+
+            # ── 历史完整性检查 ──
+            # 有缓存但可能缺少历史年份的股票（如之前只跑了 --since 2025），
+            # 通过探测 N 年前是否有数据来判断。无数据则切换全量下载。
+            incomplete_stocks: set[str] = set()
+            stocks_with_cache = [s for s in stocks if s in local_dates]
+            if stocks_with_cache:
+                sentinel_year = datetime.now().year - KLINE_HISTORY_CHECK_YEARS
+                tqdm.write(f"  检查历史完整性 ({sentinel_year}年)...")
+                has_history: set[str] = set()
+                for batch in make_batches(stocks_with_cache, PROBE_BATCH_SIZE):
+                    try:
+                        data = xtdata.get_local_data(
+                            field_list=[], stock_list=batch, period=period,
+                            start_time=f"{sentinel_year}0101",
+                            end_time=f"{sentinel_year}1231", count=1,
+                        )
+                        for stock, df in data.items():
+                            if df is not None and not df.empty:
+                                has_history.add(stock)
+                    except Exception as exc:
+                        logger.warning("历史完整性探测失败: %s", exc)
+                incomplete_stocks = set(stocks_with_cache) - has_history
+
+            # 按缺口天数降序排列：无缓存 > 历史不完整 > 缓存最旧 > 缓存最新
             def _gap_sort_key(s: str) -> int:
-                d = local_dates.get(s)
-                if not d:
+                if s not in local_dates:
                     return 999999  # 无缓存，缺口最大
+                if s in incomplete_stocks:
+                    return 999998  # 有缓存但历史不完整
+                d = local_dates[s]
                 return (datetime.strptime(today_str, "%Y%m%d") - datetime.strptime(d, "%Y%m%d")).days
             sorted_stocks = sorted(stocks, key=_gap_sort_key, reverse=True)
             # 每只股票用自己精确的 start_time
             date_groups = []
             for s in sorted_stocks:
                 d = local_dates.get(s)
-                if d:
+                if d and s not in incomplete_stocks:
+                    # 有缓存且历史完整 → 增量下载
                     overlap_dt = datetime.strptime(d, "%Y%m%d") - timedelta(days=SAFETY_OVERLAP_DAYS)
                     st = overlap_dt.strftime("%Y%m%d")
                 else:
+                    # 无缓存 或 历史不完整 → 全量下载
                     st = ""
                 date_groups.append((st, "", [s]))
             # 打印摘要
             n_no_cache = sum(1 for s in sorted_stocks if s not in local_dates)
-            n_cached = len(sorted_stocks) - n_no_cache
+            n_incomplete = len(incomplete_stocks)
+            n_ok = len(sorted_stocks) - n_no_cache - n_incomplete
             if n_no_cache:
                 tqdm.write(f"  · {n_no_cache} 只无缓存 (全量下载)")
-            if n_cached:
-                oldest = min(local_dates.values())
-                newest = max(local_dates.values())
-                tqdm.write(f"  · {n_cached} 只有缓存 (最旧 {oldest}, 最新 {newest})")
+            if n_incomplete:
+                tqdm.write(f"  · {n_incomplete} 只缺少历史数据 (缺 {datetime.now().year - KLINE_HISTORY_CHECK_YEARS} 年, 全量重下)")
+            if n_ok:
+                ok_dates = [local_dates[s] for s in sorted_stocks if s in local_dates and s not in incomplete_stocks]
+                if ok_dates:
+                    tqdm.write(f"  · {n_ok} 只历史完整 (最旧 {min(ok_dates)}, 最新 {max(ok_dates)}, 增量更新)")
 
         n_date_groups = len(date_groups)
 

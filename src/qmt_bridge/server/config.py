@@ -91,6 +91,13 @@ class Settings:
     webhook_url: str = ""       # 通用 Webhook 回调地址
     webhook_secret: str = ""    # Webhook 密钥（通过 X-Webhook-Secret 请求头发送）
 
+    # ---- 定时下载调度配置 ----
+    scheduler_kline_enabled: bool = True         # 是否启用 K 线增量下载
+    scheduler_kline_periods: str = "1d,5m,1m"    # K 线周期，逗号分隔
+    scheduler_kline_sectors: str = "沪深A股,沪深ETF,沪深指数"  # K 线下载板块
+    scheduler_financial_enabled: bool = True      # 是否启用财务数据增量下载
+    scheduler_financial_sectors: str = "沪深A股"  # 财务数据只对 A 股有意义
+
     @classmethod
     def from_env(cls, env_path: Path | None = None) -> "Settings":
         """从环境变量创建 Settings 实例。
@@ -143,6 +150,24 @@ class Settings:
             ),
             webhook_url=os.environ.get("QMT_BRIDGE_WEBHOOK_URL", ""),
             webhook_secret=os.environ.get("QMT_BRIDGE_WEBHOOK_SECRET", ""),
+            # 定时下载调度配置
+            scheduler_kline_enabled=os.environ.get(
+                "QMT_BRIDGE_SCHEDULER_KLINE_ENABLED", "true"
+            ).lower()
+            in ("1", "true", "yes"),
+            scheduler_kline_periods=os.environ.get(
+                "QMT_BRIDGE_SCHEDULER_KLINE_PERIODS", "1d,5m,1m"
+            ),
+            scheduler_kline_sectors=os.environ.get(
+                "QMT_BRIDGE_SCHEDULER_KLINE_SECTORS", "沪深A股,沪深ETF,沪深指数"
+            ),
+            scheduler_financial_enabled=os.environ.get(
+                "QMT_BRIDGE_SCHEDULER_FINANCIAL_ENABLED", "true"
+            ).lower()
+            in ("1", "true", "yes"),
+            scheduler_financial_sectors=os.environ.get(
+                "QMT_BRIDGE_SCHEDULER_FINANCIAL_SECTORS", "沪深A股"
+            ),
         )
 
 

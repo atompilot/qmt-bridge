@@ -86,9 +86,15 @@ async def _lifespan(app: FastAPI):
         app.state.notifier_manager = None
 
     # 启动后台数据预下载调度器（定时调用 xtdata 下载行情数据）
+    from .downloader import DownloadSchedulerState
     from .scheduler import scheduler_loop
 
-    scheduler_task = asyncio.create_task(scheduler_loop())
+    download_scheduler_state = DownloadSchedulerState()
+    app.state.download_scheduler = download_scheduler_state
+
+    scheduler_task = asyncio.create_task(
+        scheduler_loop(download_scheduler_state, settings)
+    )
     app.state.scheduler_task = scheduler_task
 
     yield  # --- 应用运行中，以下为关闭阶段 ---

@@ -22,6 +22,7 @@
 from fastapi import APIRouter
 from xtquant import xtdata
 
+from ..downloader import download_history_data2_safe
 from ..helpers import _numpy_to_python
 from ..models import (
     BatchDownloadRequest,
@@ -53,9 +54,9 @@ def download_history_data2(req: BatchDownloadRequest):
         period: 请求的 K 线周期。
         result: 下载结果详情。
 
-    底层调用: xtdata.download_history_data2(stock_list, period=..., ...)
+    底层调用: downloader.download_history_data2_safe() — 逐只下载，绕过 xtquant bug。
     """
-    result = xtdata.download_history_data2(
+    result = download_history_data2_safe(
         req.stock_list,
         period=req.period,
         start_time=req.start_time,
@@ -65,7 +66,7 @@ def download_history_data2(req: BatchDownloadRequest):
         "status": "ok",
         "stocks": req.stock_list,
         "period": req.period,
-        "result": _numpy_to_python(result) if result else {},
+        "result": result,
     }
 
 

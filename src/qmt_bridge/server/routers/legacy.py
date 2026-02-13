@@ -13,6 +13,7 @@
 from fastapi import APIRouter, Query
 from xtquant import xtdata
 
+from ..downloader import download_single_kline
 from ..helpers import _market_data_to_records, _numpy_to_python
 from ..models import DownloadRequest
 
@@ -179,9 +180,8 @@ def download_data(req: DownloadRequest):
         stock: 股票代码。
         period: K 线周期。
 
-    底层调用: xtdata.download_history_data(stock, period=..., start_time=..., end_time=...)
+    底层调用: downloader.download_single_kline() — 绕过 xtquant bug。
     """
-    xtdata.download_history_data(
-        req.stock, period=req.period, start_time=req.start, end_time=req.end
-    )
-    return {"status": "ok", "stock": req.stock, "period": req.period}
+    client = xtdata.get_client()
+    status = download_single_kline(client, req.stock, req.period, req.start, req.end)
+    return {"status": status, "stock": req.stock, "period": req.period}

@@ -6,18 +6,17 @@
 1. 客户端建立 WebSocket 连接
 2. 客户端发送下载参数 JSON：
    {"stocks": ["000001.SZ"], "period": "1d", "start_time": "20230101", "end_time": "20231231"}
-3. 服务端调用 xtdata.download_history_data2 开始下载
-4. 下载进度通过回调实时推送给客户端
-5. 下载完成后发送 {"status": "done"} 并结束
+3. 服务端调用 download_history_data2_safe 逐只下载
+4. 每只股票完成后通过 WebSocket 推送进度
+5. 全部完成后发送 {"status": "done", "results": {...}} 并结束
 """
 
 import asyncio
 import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from xtquant import xtdata
 
-from ..helpers import _numpy_to_python
+from ..downloader import download_history_data2_safe
 
 router = APIRouter()
 
@@ -26,8 +25,8 @@ router = APIRouter()
 async def ws_download_progress(ws: WebSocket):
     """历史数据下载进度 WebSocket 端点。
 
-    接受客户端的下载请求参数，调用 xtdata 下载历史数据，
-    并将下载进度实时推送给客户端。
+    接受客户端的下载请求参数，调用安全下载函数逐只下载历史数据，
+    并将逐只进度实时推送给客户端。
 
     协议：
         客户端发送下载请求 JSON::
@@ -39,15 +38,19 @@ async def ws_download_progress(ws: WebSocket):
                 "end_time": "20231231"
             }
 
-        服务端推送下载进度信息，最终发送::
+        服务端推送逐只下载进度::
 
-            {"status": "done"}
+            {"finished": 1, "total": 2, "stock": "000001.SZ", "status": "ok"}
+            {"finished": 2, "total": 2, "stock": "600000.SH", "status": "ok"}
+
+        全部完成后发送::
+
+            {"status": "done", "results": {"000001.SZ": "ok", "600000.SH": "ok"}}
     """
     await ws.accept()
     loop = asyncio.get_event_loop()
 
     try:
-        # 接收客户端的下载参数
         msg = await ws.receive_text()
         payload = json.loads(msg)
         stocks: list[str] = payload.get("stocks", [])
@@ -63,24 +66,18 @@ async def ws_download_progress(ws: WebSocket):
                 pass
 
         def on_progress(data):
-            """下载进度回调 — 在 xtdata 后台线程中被调用。
+            """下载进度回调 — 在线程池线程中被调用。"""
+            asyncio.run_coroutine_threadsafe(_send(data), loop)
 
-            将进度数据转换为原生 Python 类型后投递到 asyncio 事件循环。
-            """
-            clean = _numpy_to_python(data)
-            asyncio.run_coroutine_threadsafe(_send(clean), loop)
-
-        # 调用 xtdata 下载历史数据，下载过程中通过回调推送进度
-        xtdata.download_history_data2(
-            stocks,
-            period=period,
-            start_time=start_time,
-            end_time=end_time,
-            callback=on_progress,
+        # 在线程池中运行，避免阻塞事件循环
+        results = await loop.run_in_executor(
+            None,
+            lambda: download_history_data2_safe(
+                stocks, period, start_time, end_time, callback=on_progress,
+            ),
         )
 
-        # 下载完成，通知客户端
-        await ws.send_json({"status": "done"})
+        await ws.send_json({"status": "done", "results": results})
 
     except WebSocketDisconnect:
         pass
