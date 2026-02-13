@@ -55,6 +55,22 @@ serve-stop:
 download-all *ARGS:
     python scripts/download_all.py {{ARGS}}
 
+# 仅下载 1m K 线数据（跳过财务数据）
+download-1m *ARGS:
+    python scripts/download_all.py --periods 1m --skip-financial {{ARGS}}
+
+# 下载最近两年的 1m K 线数据（快速启动算法开发）
+download-1m-recent *ARGS:
+    python scripts/download_all.py --periods 1m --skip-financial --since 2025 {{ARGS}}
+
+# 仅下载 5m K 线数据（跳过财务数据）
+download-5m *ARGS:
+    python scripts/download_all.py --periods 5m --skip-financial {{ARGS}}
+
+# 下载最近两年的 5m K 线数据（快速启动算法开发）
+download-5m-recent *ARGS:
+    python scripts/download_all.py --periods 5m --skip-financial --since 2025 {{ARGS}}
+
 # ─────────────────────────── 仪表盘 ─────────────────────────
 
 # 启动可视化仪表盘（http://localhost:8501）
