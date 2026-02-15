@@ -5,21 +5,49 @@
 2. 管理应用生命周期（lifespan），包括：
    - 启动时初始化 xttrader 交易管理器（XtTraderManager）
    - 启动时初始化通知模块（飞书/Webhook 通知）
-   - 启动后台数据预下载调度器
    - 关闭时清理所有资源连接
 3. 注册所有 HTTP 路由和 WebSocket 端点
+
+注：定时下载调度器已拆分为独立进程 ``qmt-scheduler``，
+不再随 API 服务启动，避免 xtdata C 扩展并发调用崩溃。
 """
 
 import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 from .config import Settings, get_settings
 
 # 全局日志记录器，用于记录服务端运行状态
 logger = logging.getLogger("qmt_bridge")
+
+# ── xtdata 并发保护 ─────────────────────────────────────────────
+# xtdata 的 C 扩展不是线程安全的。FastAPI 把同步路由处理函数分发到
+# 线程池并发执行，多个请求同时调用 xtdata 会导致 BSON 断言崩溃。
+#
+# 用 asyncio.Lock 包装的 async generator 依赖：
+#   1. 事件循环中 acquire —— 排队等候
+#   2. yield —— FastAPI 把 sync handler 提交到线程池并 await
+#   3. handler 完成后回到事件循环 release
+# 效果：同一时刻最多一个 sync handler 在线程池里调用 xtdata。
+# ────────────────────────────────────────────────────────────────
+
+_xtdata_lock = asyncio.Lock()
+
+
+async def _xtdata_serialize():
+    """FastAPI 依赖：串行化 xtdata 调用，防止并发导致 C 扩展崩溃。"""
+    logger.debug("xtdata_lock: 等待获取锁...")
+    async with _xtdata_lock:
+        logger.debug("xtdata_lock: ✓ 已获取锁")
+        yield
+    logger.debug("xtdata_lock: 已释放锁")
+
+
+# 所有调用 xtdata 的 HTTP 路由共享此依赖列表
+_serial = [Depends(_xtdata_serialize)]
 
 
 @asynccontextmanager
@@ -28,14 +56,11 @@ async def _lifespan(app: FastAPI):
 
     启动阶段（yield 之前）：
     1. 若启用交易功能，初始化 XtTraderManager 并连接 miniQMT 客户端
-       （底层调用 xttrader.connect() 建立与 miniQMT 的通信连接）
     2. 若启用通知功能，启动 NotifierManager（飞书/Webhook 通知后端）
-    3. 启动后台数据预下载调度器（scheduler_loop），定时调用 xtdata 下载数据
 
     关闭阶段（yield 之后）：
-    1. 取消后台调度任务
-    2. 停止通知模块
-    3. 断开交易管理器连接（底层调用 xttrader.disconnect()）
+    1. 停止通知模块
+    2. 断开交易管理器连接（底层调用 xttrader.disconnect()）
 
     Args:
         app: FastAPI 应用实例，通过 app.state 存储共享状态
@@ -85,24 +110,7 @@ async def _lifespan(app: FastAPI):
     else:
         app.state.notifier_manager = None
 
-    # 启动后台数据预下载调度器（定时调用 xtdata 下载行情数据）
-    from .downloader import DownloadSchedulerState
-    from .scheduler import scheduler_loop
-
-    download_scheduler_state = DownloadSchedulerState()
-    app.state.download_scheduler = download_scheduler_state
-
-    scheduler_task = asyncio.create_task(
-        scheduler_loop(download_scheduler_state, settings)
-    )
-    app.state.scheduler_task = scheduler_task
-
     yield  # --- 应用运行中，以下为关闭阶段 ---
-
-    # 取消后台调度任务
-    scheduler_task = getattr(app.state, "scheduler_task", None)
-    if scheduler_task:
-        scheduler_task.cancel()
 
     # 停止通知模块，释放后台资源
     notifier = getattr(app.state, "notifier_manager", None)
@@ -151,6 +159,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # ------------------------------------------------------------------
     # 注册数据查询路由（始终可用，无需启用交易模块）
     # 这些路由底层调用 xtquant.xtdata 的各类行情数据接口
+    # dependencies=_serial 确保同一时刻只有一个请求调用 xtdata
     # ------------------------------------------------------------------
     from .routers import (
         calendar,
@@ -172,33 +181,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         utility,
     )
 
-    app.include_router(market.router)       # K线行情数据路由
-    app.include_router(tick.router)         # 逐笔成交/分笔数据路由
-    app.include_router(sector.router)       # 板块分类与成分股路由
-    app.include_router(calendar.router)     # 交易日历路由
-    app.include_router(financial.router)    # 财务数据路由
-    app.include_router(instrument.router)   # 合约基础信息路由
-    app.include_router(option.router)       # 期权数据路由
-    app.include_router(etf.router)          # ETF 相关数据路由
-    app.include_router(cb.router)           # 可转债相关数据路由
-    app.include_router(futures.router)      # 期货数据路由
-    app.include_router(meta.router)         # 元数据/合约信息表路由
-    app.include_router(download.router)     # 数据下载（触发 xtdata 本地缓存）路由
-    app.include_router(formula.router)      # 公式/模型计算路由
-    app.include_router(hk.router)           # 港股数据路由
-    app.include_router(tabular.router)      # 通用表格数据路由
-    app.include_router(utility.router)      # 工具类接口路由
-    app.include_router(legacy.router)       # 旧版兼容接口路由
+    app.include_router(market.router, dependencies=_serial)
+    app.include_router(tick.router, dependencies=_serial)
+    app.include_router(sector.router, dependencies=_serial)
+    app.include_router(calendar.router, dependencies=_serial)
+    app.include_router(financial.router, dependencies=_serial)
+    app.include_router(instrument.router, dependencies=_serial)
+    app.include_router(option.router, dependencies=_serial)
+    app.include_router(etf.router, dependencies=_serial)
+    app.include_router(cb.router, dependencies=_serial)
+    app.include_router(futures.router, dependencies=_serial)
+    app.include_router(meta.router, dependencies=_serial)
+    app.include_router(download.router, dependencies=_serial)
+    app.include_router(formula.router, dependencies=_serial)
+    app.include_router(hk.router, dependencies=_serial)
+    app.include_router(tabular.router, dependencies=_serial)
+    app.include_router(utility.router, dependencies=_serial)
+    app.include_router(legacy.router, dependencies=_serial)
 
     # ------------------------------------------------------------------
     # 注册 WebSocket 端点（实时数据推送）
+    # WebSocket 不加串行化依赖，避免长连接永久持锁
     # ------------------------------------------------------------------
     from .ws import download_progress, formula as formula_ws, realtime, whole_quote
 
-    app.include_router(realtime.router)           # 实时行情 WebSocket（订阅 xtdata 实时数据）
-    app.include_router(whole_quote.router)         # 全推行情 WebSocket
-    app.include_router(download_progress.router)   # 数据下载进度 WebSocket
-    app.include_router(formula_ws.router)          # 公式计算实时推送 WebSocket
+    app.include_router(realtime.router)
+    app.include_router(whole_quote.router)
+    app.include_router(download_progress.router)
+    app.include_router(formula_ws.router)
 
     # ------------------------------------------------------------------
     # 注册通知路由（仅在配置中启用通知时加载）
@@ -215,14 +225,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.trading_enabled:
         from .routers import bank, credit, fund, smt, trading
 
-        app.include_router(trading.router)   # 普通股票交易路由（下单/撤单/查询）
-        app.include_router(credit.router)    # 信用交易（融资融券）路由
-        app.include_router(fund.router)      # 资金划转路由
-        app.include_router(smt.router)       # 转融通（SMT）交易路由
-        app.include_router(bank.router)      # 银证转账路由
+        app.include_router(trading.router, dependencies=_serial)
+        app.include_router(credit.router, dependencies=_serial)
+        app.include_router(fund.router, dependencies=_serial)
+        app.include_router(smt.router, dependencies=_serial)
+        app.include_router(bank.router, dependencies=_serial)
 
         from .ws import trade_callback
 
-        app.include_router(trade_callback.router)  # 交易回调 WebSocket（委托/成交推送）
+        app.include_router(trade_callback.router)
 
     return app

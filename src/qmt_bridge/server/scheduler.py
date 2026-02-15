@@ -53,6 +53,7 @@ async def run_daily_downloads() -> None:
     由于 xtdata 的下载接口均为同步阻塞调用，此函数通过
     ``loop.run_in_executor`` 将每个任务放入线程池执行，避免阻塞事件循环。
     任务按顺序依次执行，单个任务失败不会影响后续任务。
+
     """
     loop = asyncio.get_event_loop()
     for name, func in DAILY_TASKS:
@@ -165,23 +166,27 @@ async def scheduler_loop(
         settings.scheduler_financial_enabled,
     )
 
-    while True:
-        # 1. 基础数据下载（板块/日历/合约/权重/ETF/转债）
-        await run_daily_downloads()
+    try:
+        while True:
+            # 1. 基础数据下载（板块/日历/合约/权重/ETF/转债）
+            await run_daily_downloads()
 
-        # 2. K 线增量下载
-        if settings.scheduler_kline_enabled:
-            try:
-                await _run_kline_incremental(state, settings)
-            except Exception:
-                logger.exception("K线增量下载调度异常")
+            # 2. K 线增量下载
+            if settings.scheduler_kline_enabled:
+                try:
+                    await _run_kline_incremental(state, settings)
+                except Exception:
+                    logger.exception("K线增量下载调度异常")
 
-        # 3. 财务数据增量下载
-        if settings.scheduler_financial_enabled:
-            try:
-                await _run_financial_incremental(state, settings)
-            except Exception:
-                logger.exception("财务增量下载调度异常")
+            # 3. 财务数据增量下载
+            if settings.scheduler_financial_enabled:
+                try:
+                    await _run_financial_incremental(state, settings)
+                except Exception:
+                    logger.exception("财务增量下载调度异常")
 
-        # 等待 24 小时后再次执行
-        await asyncio.sleep(86400)
+            # 等待 24 小时后再次执行
+            await asyncio.sleep(86400)
+    except asyncio.CancelledError:
+        logger.info("定时下载调度器已停止")
+        raise

@@ -67,3 +67,23 @@ just build                # 构建 wheel
 
 - 单一版本源: `src/qmt_bridge/_version.py`
 - hatch 自动读取，发布前手动更新
+
+## 已知问题与排障手册
+
+### BSON 断言崩溃 (`Assertion failed: u < 1000000, bsonobj.cpp`)
+
+**现象**：调用 `xtdata.get_local_data()` 或 `xtdata.get_market_data_ex()` 时进程崩溃，
+错误信息为 `Assertion failed: u < 1000000, file ...\bsonobj.cpp, line 1388`。
+`get_full_tick()`、`get_stock_list_in_sector()` 等其他接口正常。
+
+**根因**：QMT 服务端进程（XtMiniQmt.exe / miniquote.exe）内部状态损坏，
+返回了无效的 BSON 响应。与磁盘数据文件无关（经排查：移除整个 datadir 仍崩溃）。
+
+**解决方法**：**重启 QMT 客户端软件**即可恢复。
+
+**排查记录（2026-02-15）**：
+1. 最初误判为线程并发问题，添加了 `asyncio.Lock` 串行化依赖（保留，有防护价值）
+2. 将定时下载调度器拆分为独立进程 `qmt-scheduler`（保留，架构更合理）
+3. 经诊断脚本 `scripts/diagnose_bson.py` 确认只有 `get_local_data` / `get_market_data_ex` 崩溃
+4. 经 `scripts/find_bad_cache.py` 排除了所有磁盘文件（datadir、共享内存、IPC 队列）
+5. 最终确认重启 QMT 后问题消失，属于 QMT 服务端内存状态损坏

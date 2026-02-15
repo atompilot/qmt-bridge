@@ -57,6 +57,7 @@ dashboard = [
 
 [project.scripts]
 qmt-server = "qmt_bridge.server.cli:main"
+qmt-scheduler = "qmt_bridge.server.cli:scheduler_main"
 
 [project.urls]
 Homepage = "https://github.com/atompilot/qmt-bridge"

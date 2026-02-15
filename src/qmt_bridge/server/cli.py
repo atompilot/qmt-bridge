@@ -1,12 +1,16 @@
-"""命令行入口模块 ── ``qmt-server`` 命令。
+"""命令行入口模块 ── ``qmt-server`` / ``qmt-scheduler`` 命令。
 
-本模块提供 QMT Bridge 服务端的命令行启动入口。
-用户可通过 ``qmt-server`` 命令（或 ``python -m qmt_bridge.server.cli``）启动服务，
-支持通过命令行参数或环境变量 / .env 文件配置服务器参数。
+本模块提供 QMT Bridge 的命令行启动入口：
+- ``qmt-server``: 启动 HTTP API 服务（不含定时下载调度器）
+- ``qmt-scheduler``: 启动定时数据下载调度器（独立进程）
+
+两个命令分离运行，避免 xtdata C 扩展在同进程内被多线程并发调用导致
+BSON 断言崩溃。
 
 典型用法::
 
     qmt-server --host 0.0.0.0 --port 8000 --trading --api-key my-secret-key
+    qmt-scheduler                        # 另开终端运行
 """
 
 import argparse
@@ -127,7 +131,64 @@ def main():
         port=settings.port,
         log_level=settings.log_level,
         workers=settings.workers,
+        timeout_graceful_shutdown=3,
     )
+
+
+def scheduler_main():
+    """启动定时数据下载调度器（独立进程）。
+
+    从 .env / 环境变量读取调度配置（scheduler_kline_*, scheduler_financial_*），
+    在独立进程中运行，不与 API 服务共享线程池，
+    从根本上避免 xtdata C 扩展的并发调用问题。
+
+    用法::
+
+        qmt-scheduler                    # 使用 .env 默认配置
+        qmt-scheduler --log-level debug  # 调试模式
+    """
+    _load_env_file()
+
+    parser = argparse.ArgumentParser(
+        prog="qmt-scheduler",
+        description="QMT Bridge 定时数据下载调度器（独立进程）",
+    )
+    parser.add_argument(
+        "--log-level",
+        default=os.environ.get("QMT_BRIDGE_LOG_LEVEL", "info"),
+        choices=["critical", "error", "warning", "info", "debug"],
+        help="日志级别 (default: info)",
+    )
+    args = parser.parse_args()
+
+    import asyncio
+    import logging
+
+    app_logger = logging.getLogger("qmt_bridge")
+    app_logger.setLevel(getattr(logging, args.log_level.upper(), logging.INFO))
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s - %(message)s"))
+        app_logger.addHandler(handler)
+
+    settings = Settings.from_env()
+
+    from .downloader import DownloadSchedulerState
+    from .scheduler import scheduler_loop
+
+    state = DownloadSchedulerState()
+
+    app_logger.info(
+        "调度器独立进程启动 (K线=%s 周期=%s, 财务=%s)",
+        settings.scheduler_kline_enabled,
+        settings.scheduler_kline_periods,
+        settings.scheduler_financial_enabled,
+    )
+
+    try:
+        asyncio.run(scheduler_loop(state, settings))
+    except KeyboardInterrupt:
+        app_logger.info("调度器已停止")
 
 
 if __name__ == "__main__":

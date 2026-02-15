@@ -44,6 +44,14 @@ serve-port port="8000":
 serve-debug:
     qmt-server --log-level debug
 
+# 启动定时下载调度器（独立进程，与 serve 分开运行）
+scheduler *ARGS:
+    qmt-scheduler {{ARGS}}
+
+# 启动定时下载调度器（调试模式）
+scheduler-debug:
+    qmt-scheduler --log-level debug
+
 # 停止 API 服务（查找并终止占用 18888 端口的进程）
 serve-stop:
     @echo "正在查找 qmt-server 进程..."
