@@ -48,8 +48,13 @@ PROBE_BATCH_SIZE = 200
 # 增量下载安全重叠天数
 SAFETY_OVERLAP_DAYS = 1
 
-# K 线历史完整性检查年数
-KLINE_HISTORY_CHECK_YEARS = 3
+# K 线历史完整性检查回溯年数，按周期区分。
+# 日线数据应有多年历史；分钟数据 xtquant 通常只保留近 1 年，检查远年无意义。
+# 0 = 跳过检查（不会因"缺历史"触发全量重下）。
+KLINE_HISTORY_CHECK_YEARS: dict[str, int] = {
+    "1d": 3,
+    "1m": 0, "5m": 0, "15m": 0, "30m": 0, "60m": 0,
+}
 
 # 财务数据过期天数（季报周期约 90 天）
 FINANCIAL_STALE_DAYS = 90
@@ -460,11 +465,12 @@ def download_kline_incremental(
     local_dates = probe_local_dates(stocks, period)
     today_str = datetime.now().strftime("%Y%m%d")
 
-    # 历史完整性检查
+    # 历史完整性检查（仅对日线等有长期历史的周期）
+    check_years = KLINE_HISTORY_CHECK_YEARS.get(period, 0)
     incomplete_stocks: set[str] = set()
     stocks_with_cache = [s for s in stocks if s in local_dates]
-    if stocks_with_cache:
-        sentinel_year = datetime.now().year - KLINE_HISTORY_CHECK_YEARS
+    if stocks_with_cache and check_years > 0:
+        sentinel_year = datetime.now().year - check_years
         has_history: set[str] = set()
         for batch in make_batches(stocks_with_cache, PROBE_BATCH_SIZE):
             try:

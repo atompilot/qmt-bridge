@@ -654,10 +654,11 @@ def download_kline_v2(
             # ── 历史完整性检查 ──
             # 有缓存但可能缺少历史年份的股票（如之前只跑了 --since 2025），
             # 通过探测 N 年前是否有数据来判断。无数据则切换全量下载。
+            check_years = KLINE_HISTORY_CHECK_YEARS.get(period, 0)
             incomplete_stocks: set[str] = set()
             stocks_with_cache = [s for s in stocks if s in local_dates]
-            if stocks_with_cache:
-                sentinel_year = datetime.now().year - KLINE_HISTORY_CHECK_YEARS
+            if stocks_with_cache and check_years > 0:
+                sentinel_year = datetime.now().year - check_years
                 tqdm.write(f"  检查历史完整性 ({sentinel_year}年)...")
                 has_history: set[str] = set()
                 for batch in make_batches(stocks_with_cache, PROBE_BATCH_SIZE):
@@ -702,7 +703,7 @@ def download_kline_v2(
             if n_no_cache:
                 tqdm.write(f"  · {n_no_cache} 只无缓存 (全量下载)")
             if n_incomplete:
-                tqdm.write(f"  · {n_incomplete} 只缺少历史数据 (缺 {datetime.now().year - KLINE_HISTORY_CHECK_YEARS} 年, 全量重下)")
+                tqdm.write(f"  · {n_incomplete} 只缺少历史数据 (缺 {datetime.now().year - check_years} 年, 全量重下)")
             if n_ok:
                 ok_dates = [local_dates[s] for s in sorted_stocks if s in local_dates and s not in incomplete_stocks]
                 if ok_dates:
